@@ -39,6 +39,7 @@ struct Uniforms {
     float fallX, fallY, fallSize, fallAlpha;
     float hover, fallTear, feedAngle, feedStrength;
     float feedR, feedG, feedB, plunge;
+    float bgBlur, pad0, pad1, pad2;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -199,8 +200,27 @@ static inline float3 skySampleGrad(texture2d<float> bg, sampler smp,
                                    float2 ddx, float2 ddy) {
     float2 scale = float2(U.bgScaleX, U.bgScaleY);
     float2 t = uv * scale + float2(U.bgOffX, U.bgOffY);
-    float2 gx = clamp(ddx * scale, -0.25f, 0.25f);
-    float2 gy = clamp(ddy * scale, -0.25f, 0.25f);
+    float2 gx = ddx * scale, gy = ddy * scale;
+
+    // Correct filtering stops the halo from *aliasing*; it does not stop it
+    // from being busy. A lens faithfully reproduces whatever is behind it, so
+    // over a window full of text the compressed annulus fills with legible
+    // lines packed a pixel or two apart — sharp, stable, and still the wrong
+    // read, because the halo is meant to be glow around the hole rather than a
+    // second copy of your screen. bgBlur adds LOD *in proportion to how hard
+    // the lens is squeezing*: `extra = bgBlur · log2(compression)`, so the
+    // undistorted corners stay pixel-exact and only the squeezed band softens.
+    // 0 is the physically honest sample.
+    if (U.bgBlur > 0.001f) {
+        float base = max(max(scale.x, scale.y) / max(U.resY, 1.0f), 1e-7f);
+        float g = max(max(abs(gx.x), abs(gx.y)), max(abs(gy.x), abs(gy.y)));
+        float k = pow(max(g / base, 1.0f), U.bgBlur);
+        gx *= k;
+        gy *= k;
+    }
+    // Clamped so a caustic cannot demand a mip that does not exist.
+    gx = clamp(gx, -0.25f, 0.25f);
+    gy = clamp(gy, -0.25f, 0.25f);
     return bg.sample(smp, t, gradient2d(gx, gy)).rgb * U.bgDim;
 }
 

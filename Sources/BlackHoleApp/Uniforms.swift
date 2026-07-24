@@ -106,4 +106,11 @@ struct Uniforms {
     /// How brightly the plunging region inside the ISCO still radiates. 0 is
     /// the old hard cut at DISK_INNER.
     var plunge: Float = 0.5
+
+    /// Extra blur for the lensed background, in proportion to how hard the lens
+    /// is compressing it. 0 is the physically honest sample.
+    var bgBlur: Float = 1.0
+    var pad0: Float = 0
+    var pad1: Float = 0
+    var pad2: Float = 0
 }

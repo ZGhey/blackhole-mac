@@ -28,7 +28,7 @@ enum Specs {
         "SPOT_GAIN", "SPOT_RADIUS",
         "DISK_TEMP", "DOPPLER_MIX", "DISK_BEAM", "EXPOSURE", "RING_GAIN",
         "DISK_RATE",
-        "BLOOM", "BLOOM_THRESHOLD", "N_STEPS", "BG_DIM",
+        "BLOOM", "BLOOM_THRESHOLD", "N_STEPS", "BG_DIM", "BG_BLUR",
     ]
 
     static let all: [String: ParamSpec] = [
@@ -63,6 +63,7 @@ enum Specs {
         "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.55, "How bright a pixel must be before it starts to glow"),
         "N_STEPS":       ParamSpec(8...128, "Render", 48, "Geodesic integration steps per pixel — the main GPU dial. Only pixels near the hole pay it"),
         "BG_DIM":        ParamSpec(0.0...1.0, "Render", 1.0, "Dims the lensed screen so the disk reads brighter against busy content"),
+        "BG_BLUR":       ParamSpec(0.0...3.0, "Render", 1.0, "Softens the lensed screen in proportion to how hard the lens is squeezing it — the corners stay pixel-exact, the compressed band around the ring turns to glow. 0 is the honest sample, which over a page of text reproduces every line of it a pixel apart"),
     ]
 
     static func spec(_ name: String) -> ParamSpec {
@@ -287,6 +288,7 @@ final class Params: ObservableObject {
         // Mass just fell in, so the hole is briefly heavier and bends harder.
         u.lensBoost  = 1 + 0.12 * flare
         u.ringGain   = f("RING_GAIN")
+        u.bgBlur     = f("BG_BLUR")
 
         return u
     }
