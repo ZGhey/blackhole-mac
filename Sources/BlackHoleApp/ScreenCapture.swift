@@ -42,6 +42,10 @@ final class ScreenCapture: NSObject {
     /// Smoothed system-audio envelope, 0…1. The stream already exists for the
     /// picture, so the sound is nearly free — one more output type.
     private(set) var audioLevel: Float = 0
+    /// Arrival rate of screen frames, for telling "the capture stopped" apart
+    /// from "nothing behind the widget moved".
+    private var framesSinceTick = 0
+    private var lastTick = CACurrentMediaTime()
     /// Whether to ask for audio at all. Changing it restarts the stream, since
     /// SCStreamConfiguration is fixed once a stream is created.
     var capturesAudio = false {
@@ -374,7 +378,24 @@ extension ScreenCapture {
         audioLevel += (shaped - audioLevel) * k
     }
 
+    /// ScreenCaptureKit only sends a frame when the captured region actually
+    /// changed, so "the lensed background froze" and "nothing behind the widget
+    /// moved" look identical from the outside. Counting arrivals is the only
+    /// way to tell them apart after the fact.
     fileprivate func ingest(_ pixelBuffer: CVPixelBuffer) {
+        framesSinceTick += 1
+        let now = CACurrentMediaTime()
+        if now - lastTick >= 5 {
+            // Only worth saying when it is *not* delivering. Measured on a
+            // running widget it holds 29.5 fps indefinitely — it does not go
+            // idle when the screen is still, so a frozen lensed background is
+            // never this stream's doing and the search should go elsewhere.
+            if framesSinceTick == 0 {
+                Self.log.notice("no screen frames for \(now - self.lastTick, format: .fixed(precision: 1), privacy: .public)s")
+            }
+            framesSinceTick = 0
+            lastTick = now
+        }
         guard let cache = textureCache else { return }
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
