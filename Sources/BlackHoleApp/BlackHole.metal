@@ -39,7 +39,7 @@ struct Uniforms {
     float fallX, fallY, fallSize, fallAlpha;
     float hover, fallTear, feedAngle, feedStrength;
     float feedR, feedG, feedB, plunge;
-    float bgBlur, pad0, pad1, pad2;
+    float bgBlur, diskRefresh, pad1, pad2;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -591,9 +591,37 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                 // √(1 − 1.5/r): time runs slower for the inner orbits — the
                 // pattern visibly freezes toward the inner edge
                 float gloc  = sqrt(max(1.0f - 1.5f / rc, 0.02f));
-                float swirl = rc * U.diskWind * 0.12f - U.diskPhase * kep * gloc * sdir;
-                float streaks = vnoiseWrapY(float2(rc * 2.8f, turns * 19.0f + swirl * 3.0f), 19.0f) * 0.65f +
-                                vnoiseWrapY(float2(rc * 1.0f, turns * 9.0f + swirl * 1.5f + 7.0f), 9.0f) * 0.35f;
+                // The winding problem. `kep` falls off with radius, so the
+                // phase the gas has turned through is a function of radius, and
+                // multiplying it by a diskPhase that only ever grows shears the
+                // streak field into a spiral that gets tighter forever. It is
+                // the same reason galaxies cannot have material spiral arms,
+                // and on a widget left running it is fatal: measured fineness
+                // (mean |∇²L| as a % of mean disk luma) goes 6.0 at launch,
+                // 15.4 after 30 s, 26.7 after 2 min and saturates near 33 —
+                // by then every filament has been wound below the pixel grid
+                // and the disk is a sheet of fine noise. That is what "the
+                // ripples get denser and stop moving" is.
+                //
+                // Real disks do not do this because turbulence keeps making new
+                // structure. Two copies of the field, wound half a period out
+                // of step and crossfaded so each one is invisible at the moment
+                // it restarts, is the standard way to say that: the pattern
+                // still turns at exactly the local orbital rate, it just never
+                // accumulates more than DISK_REFRESH seconds' worth of shear.
+                float period = max(U.diskRefresh, 1.0f) * 1.75f;   // seconds -> phase
+                float turnsW = U.diskPhase / period;
+                float fw     = fract(turnsW);
+                float rate   = kep * gloc * sdir * period;
+                float base   = rc * U.diskWind * 0.12f;
+                float swirlA = base - fw * rate;
+                float swirlB = base - fract(turnsW + 0.5f) * rate;
+                float wA     = 1.0f - abs(2.0f * fw - 1.0f);       // 0 exactly where A restarts
+                float streaks =
+                    mix(vnoiseWrapY(float2(rc * 2.8f, turns * 19.0f + swirlB * 3.0f), 19.0f),
+                        vnoiseWrapY(float2(rc * 2.8f, turns * 19.0f + swirlA * 3.0f), 19.0f), wA) * 0.65f +
+                    mix(vnoiseWrapY(float2(rc * 1.0f, turns * 9.0f + swirlB * 1.5f + 7.0f), 9.0f),
+                        vnoiseWrapY(float2(rc * 1.0f, turns * 9.0f + swirlA * 1.5f + 7.0f), 9.0f), wA) * 0.35f;
                 // Each further image packs a whole disk into a thinner ring,
                 // so the streak field there is far past what the pixel grid can
                 // carry. Fading the contrast by image order is the cheapest

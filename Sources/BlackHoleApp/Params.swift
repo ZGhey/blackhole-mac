@@ -27,7 +27,7 @@ enum Specs {
         "DISK_GAIN", "DISK_OPACITY", "DISK_SPEED", "DISK_WIND", "DISK_CONTRAST", "PLUNGE",
         "SPOT_GAIN", "SPOT_RADIUS",
         "DISK_TEMP", "DOPPLER_MIX", "DISK_BEAM", "EXPOSURE", "RING_GAIN",
-        "DISK_RATE",
+        "DISK_RATE", "DISK_REFRESH",
         "BLOOM", "BLOOM_THRESHOLD", "N_STEPS", "BG_DIM", "BG_BLUR",
     ]
 
@@ -59,6 +59,7 @@ enum Specs {
         "EXPOSURE":      ParamSpec(0.05...5.0, "Color & light", 1.4, "Tonemap exposure for the disk light; the screen behind is never tonemapped"),
 
         "DISK_RATE":     ParamSpec(0.0...1.0, "Render", 0.35, "How fast the disk turns overall — the gravitational time dilation theme. Lower reads as heavier"),
+        "DISK_REFRESH":  ParamSpec(4.0...90.0, "Render", 26.0, "How many seconds of shear the streak pattern may build up before it is quietly replaced. The gas at the inner edge orbits far faster than the outer edge, so any pattern painted on it winds into an ever-tighter spiral — left unbounded the filaments disappear below the pixel grid within a couple of minutes and the disk becomes fine noise. Lower churns visibly; higher lets it wind further before refreshing"),
         "BLOOM":         ParamSpec(0.0...2.0, "Render", 0.35, "How much bright light spills into its surroundings. 0 skips the four extra passes entirely — it is what makes the disk read as bright rather than merely pale. Too much and the disk spills onto itself, which costs it every filament"),
         "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.85, "How bright a pixel must be before it starts to glow. Most of the disk sits around 0.7, so anything much below that blooms the disk into its own neighbours and flattens the streaks into one sheet — this wants to catch the inner edge and the photon ring, not the whole thing"),
         "N_STEPS":       ParamSpec(8...128, "Render", 48, "Geodesic integration steps per pixel — the main GPU dial. Only pixels near the hole pay it"),
@@ -289,6 +290,7 @@ final class Params: ObservableObject {
         u.lensBoost  = 1 + 0.12 * flare
         u.ringGain   = f("RING_GAIN")
         u.bgBlur     = f("BG_BLUR")
+        u.diskRefresh = f("DISK_REFRESH")
 
         return u
     }

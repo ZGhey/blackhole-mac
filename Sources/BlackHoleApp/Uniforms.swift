@@ -110,7 +110,10 @@ struct Uniforms {
     /// Extra blur for the lensed background, in proportion to how hard the lens
     /// is compressing it. 0 is the physically honest sample.
     var bgBlur: Float = 1.5
-    var pad0: Float = 0
+    /// How many seconds of Keplerian shear the streak field is allowed to
+    /// accumulate before it is replaced by a fresh copy. Without a bound the
+    /// pattern winds itself below the pixel grid and the disk goes to noise.
+    var diskRefresh: Float = 26
     var pad1: Float = 0
     var pad2: Float = 0
 }
