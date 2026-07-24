@@ -158,7 +158,16 @@ static inline float3 tonemap(float3 c, float exposure) {
     float3 x = max(c * exposure, 0.0f);
     float peak = max(x.r, max(x.g, x.b));
     if (peak <= 1e-5f) return float3(0.0f);
-    float mapped = 1.0f - exp(-peak);
+    // Extended Reinhard rather than 1 - exp(-peak). The exponential's shoulder
+    // is far too steep for this image: it reaches 0.95 by peak 3 and 0.9997 by
+    // peak 8, so every layer in the bright part of the disk — the streak bands,
+    // the stacked higher-order images, the photon ring — lands inside the top
+    // few percent of the range and merges into one flat sheet. This keeps them
+    // separated (0.83 and 0.96 at the same two points) and only actually
+    // reaches white at the white point.
+    const float white = 9.0f;
+    float mapped = peak * (1.0f + peak / (white * white)) / (1.0f + peak);
+    mapped = clamp(mapped, 0.0f, 1.0f);
     float3 ratio = x / peak;
     // The bleach used to start at peak 1.2, which the shipped styles clear
     // immediately — so the disk went white almost everywhere and only the

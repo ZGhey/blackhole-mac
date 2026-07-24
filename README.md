@@ -225,6 +225,14 @@ bit of structure with it. Three separate fixes, all worth keeping:
 - The tonemap maps *intensity* and carries the chroma through, instead of
   running `1 − exp(−c)` per channel. The bleach that remains starts an order of
   magnitude past the knee and never completes.
+- The curve is **extended Reinhard, not exponential**. `1 − exp(−peak)` has far
+  too steep a shoulder for this image — 0.95 by peak 3, 0.9997 by peak 8 — so
+  every layer in the bright part of the disk (the streak bands, the stacked
+  higher-order images, the photon ring) lands inside the top few percent of the
+  range and merges into one flat sheet. Reinhard keeps those two at 0.83 and
+  0.96 and only reaches white at the white point. Turning `EXPOSURE` down cannot
+  fix it: that dims everything and the layers stay merged, because the problem
+  is the shape of the curve rather than where the image sits on it.
 - The disk is **screened** over the lensed background rather than added to it,
   so a bright wallpaper cannot push the sum flat.
 - Bloom is screened too, and it is fed a **separate emission target** rather
