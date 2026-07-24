@@ -27,7 +27,7 @@ using namespace metal;
 // two structs can't silently disagree. Append in groups of four and shrink the
 // pads; never reorder.
 struct Uniforms {
-    float time, resX, resY, holeFill;
+    float time, resX, resY, halo;
     float lensDepth, lensFalloff, starGain, diskPhase;
     float diskInner, diskOuter, diskIncl, diskRoll;
     float diskGain, diskOpacity, diskTemp, dopplerMix;
@@ -36,6 +36,7 @@ struct Uniforms {
     float bgScaleX, bgScaleY, bgOffX, bgOffY;
     float skyAlpha, audio, spotGain, spotRadius;
     float driftX, driftY, lensBoost, ringGain;
+    float pad0, pad1, pad2, pad3;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -63,17 +64,17 @@ static inline float4 composite(float3 col, float alpha) {
 // fall in, and it is the apparent (shadow) radius seen from far away. Physics,
 // not taste — deliberately not a uniform, so no slider can drift it.
 constant float B_CRIT = 2.5980762f;
-/// The widget's silhouette, in units of the panel's inscribed radius. The warp
-/// tapers away between these and is gone outside the second, which is what
-/// makes the widget round instead of square — an AppKit window is a rectangle,
-/// but nothing that reaches the screen has to be.
+/// Where the silhouette begins to taper, as a fraction of its own radius, and
+/// the hard ceiling on that radius in units of the panel's inscribed circle.
+/// The taper is what makes the widget round instead of square — an AppKit
+/// window is a rectangle, but nothing that reaches the screen has to be.
 constant float PANEL_FADE_START = 0.80f;
-constant float PANEL_FADE_END   = 0.98f;
-/// How far from the centre the accretion disk may reach, in the same units.
-/// Presets disagree wildly about DISK_OUTER (7 r_s for Gargantua, 16 for
+constant float PANEL_FADE_MAX   = 0.49f;
+/// How far from the centre the disk may reach lives in `diskRoom`, in the same
+/// units. Presets disagree wildly about DISK_OUTER (7 r_s for Gargantua, 16 for
 /// Blazar); scaling the hole down until the disk fits is what lets one widget
-/// size hold every style without clipping the bright part.
-constant float PANEL_DISK_ROOM = 0.34f;
+/// size hold every style without clipping the bright part. Raising it trades
+/// warped background for ring.
 constant float TAU = 6.2831853f;
 
 // ------------------------------------------------------------------ helpers --
@@ -161,13 +162,30 @@ static inline float3 tonemap(float3 c, float exposure) {
     return ratio * mapped;
 }
 
-// The lensed background. uv is in screen space (0..1); bgScale/bgOff apply the
-// aspect-fill fit computed on the CPU, so a wallpaper keeps its proportions
-// whatever the window shape.
-static inline float3 skySample(texture2d<float> bg, sampler smp,
-                               constant Uniforms &U, float2 uv) {
-    float2 t = uv * float2(U.bgScaleX, U.bgScaleY) + float2(U.bgOffX, U.bgOffY);
-    return bg.sample(smp, t).rgb * U.bgDim;
+// The lensed background, told how big a footprint the pixel actually covers.
+// uv is in screen space (0..1); bgScale/bgOff map it into whatever slice of the
+// capture the widget is sitting on.
+//
+// A single point sample per pixel is fine for an unwarped copy and catastrophic
+// for a lensed one: the magnification swings by orders of magnitude across the
+// image, so near the ring a wide band of screen is squeezed into a few pixels
+// and gets sampled far below its Nyquist rate. Against fine detail — which is
+// to say against text, which is what is usually behind the widget — that turns
+// into moiré, and because the hole drifts, moiré that crawls.
+//
+// Handing the hardware the real screen-space derivatives lets it pick the mip
+// level that matches the footprint, which is exactly the problem mipmaps exist
+// to solve. The derivatives are taken *before* mirrorUV folds the coordinate,
+// or every fold would read as a seam of maximum blur, and clamped so a caustic
+// cannot demand a mip that does not exist.
+static inline float3 skySampleGrad(texture2d<float> bg, sampler smp,
+                                   constant Uniforms &U, float2 uv,
+                                   float2 ddx, float2 ddy) {
+    float2 scale = float2(U.bgScaleX, U.bgScaleY);
+    float2 t = uv * scale + float2(U.bgOffX, U.bgOffY);
+    float2 gx = clamp(ddx * scale, -0.25f, 0.25f);
+    float2 gy = clamp(ddy * scale, -0.25f, 0.25f);
+    return bg.sample(smp, t, gradient2d(gx, gy)).rgb * U.bgDim;
 }
 
 // ------------------------------------------------------------------ vertex --
@@ -198,13 +216,21 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
     float rout = max(U.diskOuter, rin + 0.5f);
 
     // ---- size ----
-    // The widget is the frame and the hole is a fixed fraction of it, so
-    // resizing the window resizes everything together. The only adjustment is
-    // per-style: a preset with a wide disk gets scaled down until the bright
-    // part fits inside the silhouette, rather than being cut off by it.
-    float rh = max(U.holeFill, 1e-4f);
-    float diskExtent = (rout / B_CRIT) * rh;
-    if (diskExtent > PANEL_DISK_ROOM) rh *= PANEL_DISK_ROOM / diskExtent;
+    // The composition always fills the widget, so the window *is* the visible
+    // disc and there is no dead border to catch on the edge of a screen. That
+    // leaves exactly one thing to decide here: how much lensed background rings
+    // the disk. Everything else follows.
+    //
+    // The extent measured is what actually glows, not the nominal outer edge:
+    // emission is faded out by rout*0.70 (see the band term at the crossing),
+    // so fitting rout would hand roughly a third of the frame to disk that
+    // emits nothing — which is what made the ring look small inside an
+    // oversized warp.
+    float lit = mix(rin, rout, 0.78f);
+    float halo = clamp(U.halo, 1.0f, 3.0f);
+    float haloRadius = PANEL_FADE_MAX;
+    float diskExtent = haloRadius / halo;
+    float rh = (diskExtent * B_CRIT) / lit;
 
     // The hole wanders a little inside its frame, on the Lissajous the GLSL
     // used to drift it across a whole terminal — two incommensurate sines per
@@ -250,8 +276,8 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
     // everything past the taper falls to alpha 0 and the widget stops existing
     // there. Alpha rides the taper too, so the copy crossfades into the real
     // screen instead of ending on a visible rim.
-    float rNorm = length((uv - 0.5f) * float2(aspect, 1.0f)) / 0.5f;
-    float silhouette = 1.0f - smoothstep(PANEL_FADE_START, PANEL_FADE_END, rNorm);
+    float rNorm = length((uv - 0.5f) * float2(aspect, 1.0f)) / haloRadius;
+    float silhouette = 1.0f - smoothstep(PANEL_FADE_START, 1.0f, rNorm);
     window *= silhouette;
 
     float bmax = rout + 3.0f;             // rays beyond this can't touch the disk
@@ -278,6 +304,10 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
                    * max(U.lensDepth * U.lensBoost - 2.14f * u + 0.75f, 0.0f)
                    * window;
         float2 dir = p / max(plen, 1e-5f);
+        // Derivatives of the unfolded coordinate, taken once for the whole
+        // pixel rather than per colour channel.
+        float2 base = center + (p - dir * defl) / float2(aspect, 1.0f);
+        float2 ddx = dfdx(base), ddy = dfdy(base);
         float3 term;
         // mild chromatic aberration: blue bends a touch more than red; faded in
         // away from the handoff circle (the geodesic side has none)
@@ -286,7 +316,7 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
             float k    = 1.0f + (float(i) - 1.0f) * ab;
             float2 sp  = p - dir * defl * k;
             float2 suv = mirrorUV(center + sp / float2(aspect, 1.0f));
-            term[i]    = skySample(bg, smp, U, suv)[i];
+            term[i]    = skySampleGrad(bg, smp, U, suv, ddx, ddy)[i];
         }
         // same starfield as the geodesic region, lit through the weak-field
         // bend so stars don't pop at the boundary circle
@@ -392,7 +422,13 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
                 float swirl = rc * U.diskWind * 0.12f - U.diskPhase * kep * gloc * sdir;
                 float streaks = vnoiseWrapY(float2(rc * 2.8f, turns * 19.0f + swirl * 3.0f), 19.0f) * 0.65f +
                                 vnoiseWrapY(float2(rc * 1.0f, turns * 9.0f + swirl * 1.5f + 7.0f), 9.0f) * 0.35f;
-                streaks = 0.35f + U.diskContrast * streaks * streaks;
+                // Each further image packs a whole disk into a thinner ring,
+                // so the streak field there is far past what the pixel grid can
+                // carry. Fading the contrast by image order is the cheapest
+                // honest antialiasing available — the structure is still
+                // integrated, just not sharpened into aliasing.
+                float soften = 1.0f / (1.0f + 0.85f * float(crossings - 1));
+                streaks = 0.35f + U.diskContrast * soften * streaks * streaks;
 
                 // relativistic Doppler + gravitational shift for gas on a
                 // circular geodesic: g = √(1 − 1.5/r) / (1 − β·k̂), with the
@@ -423,24 +459,30 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
     if (!captured && dot(x, x) < 4.0f) captured = true;
 
     // ---- background: where did the escaped ray come from? ----
+    // The projection is computed for every pixel, captured or not, so that the
+    // derivatives below are taken in uniform control flow — a quad straddling
+    // the shadow's edge would otherwise hand back nonsense gradients and pick a
+    // mip at random.
+    float3 d = normalize(v);
+    // project the straight exit ray onto the sky plane at z = -lensDepth and
+    // map back to screen space
+    float tpl  = (-U.lensDepth * U.lensBoost - x.z) / min(d.z, -1e-3f);
+    float3 hp  = x + d * tpl;
+    float2 q   = rot(hp.xy, -U.diskRoll) / W;
+    float2 sp  = float2(q.x, -q.y);
+    // the *displacement* is faded by the window, never the color — a continuous
+    // warp leaves no seam at the silhouette
+    float2 warped = center + (p + (sp - p) * window) / float2(aspect, 1.0f);
+    float2 nddx = dfdx(warped), nddy = dfdy(warped);
+
     float3 bgc = float3(0.0f);
     if (!captured) {
-        float3 d = normalize(v);
         bgc += stars(d, U.time, U.starGain) * window;
         if (d.z < -0.05f) {
-            // project the straight exit ray onto the sky plane at z = -lensDepth
-            // and map back to screen space
-            float tpl  = (-U.lensDepth * U.lensBoost - x.z) / d.z;
-            float3 hp  = x + d * tpl;
-            float2 q   = rot(hp.xy, -U.diskRoll) / W;
-            float2 sp  = float2(q.x, -q.y);
-            // the *displacement* is faded by the window, never the color — a
-            // continuous warp leaves no seam at the silhouette
-            float2 suv = mirrorUV(center + (p + (sp - p) * window) / float2(aspect, 1.0f));
             // rays bent past ~90° never reach the sky plane behind the hole;
             // they fade to the starfield instead of sampling garbage
             float toward = smoothstep(0.05f, 0.35f, -d.z);
-            bgc += skySample(bg, smp, U, suv) * toward;
+            bgc += skySampleGrad(bg, smp, U, mirrorUV(warped), nddx, nddy) * toward;
         }
     }
 

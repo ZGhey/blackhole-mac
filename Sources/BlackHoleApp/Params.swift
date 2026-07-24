@@ -22,7 +22,7 @@ enum Specs {
 
     /// Order within each group, since a dictionary has none.
     static let order: [String] = [
-        "HOLE_FILL", "LENS_DEPTH", "LENS_FALLOFF", "STAR_GAIN", "DRIFT", "DRIFT_SPEED",
+        "HALO", "LENS_DEPTH", "LENS_FALLOFF", "STAR_GAIN", "DRIFT", "DRIFT_SPEED",
         "DISK_INNER", "DISK_OUTER", "DISK_INCL", "DISK_ROLL",
         "DISK_GAIN", "DISK_OPACITY", "DISK_SPEED", "DISK_WIND", "DISK_CONTRAST",
         "SPOT_GAIN", "SPOT_RADIUS",
@@ -32,9 +32,9 @@ enum Specs {
     ]
 
     static let all: [String: ParamSpec] = [
-        "HOLE_FILL":     ParamSpec(0.02...0.20, "Black hole", 0.10, "Shadow radius as a fraction of the widget. The widget is the frame, so resizing the window resizes the hole with it — this only changes how much of the frame it takes up"),
+        "HALO":          ParamSpec(1.0...2.6, "Black hole", 1.25, "How much lensed background rings the disk, as a multiple of the disk's own radius. 1.0 is the warp hugging it exactly. The composition always fills the widget, so this sets the proportions and the Size menu sets how big — they no longer fight"),
         "LENS_DEPTH":    ParamSpec(0.0...20.0, "Black hole", 13.0, "Distance from the hole to the screen behind it, in Schwarzschild radii — bigger bends what's behind harder"),
-        "LENS_FALLOFF":  ParamSpec(2.0...40.0, "Black hole", 7.0, "How far the lensing reaches, in shadow radii. Real bending falls off as 1/b and never stops; this fades it out. Beyond the widget's silhouette it is tapered away regardless"),
+        "LENS_FALLOFF":  ParamSpec(1.2...40.0, "Black hole", 2.0, "How far the lensing reaches, in shadow radii. Real bending falls off as 1/b and never stops; this fades it out. Pull it in and the warp hugs the ring instead of filling the widget — but raise DISK_ROOM with it, or the space it vacates is left as a near-undistorted copy of the screen rather than as ring"),
         "DRIFT":         ParamSpec(0.0...0.12, "Black hole", 0.035, "How far the hole wanders inside the widget, as a fraction of its height. The lensed halo is a static mapping of whatever is behind — it only moves when the warp field itself does, so this is what keeps the outer rings alive"),
         "DRIFT_SPEED":   ParamSpec(0.0...3.0, "Black hole", 1.0, "How fast it wanders. The path is two incommensurate sines per axis, so it never repeats"),
         "STAR_GAIN":     ParamSpec(0.0...2.0, "Black hole", 0.0, "Brightness of the lensed starfield (0 = off). Worth raising with the “Stars only” lens, where there is nothing else to bend"),
@@ -152,9 +152,13 @@ enum Specs {
 final class Params: ObservableObject {
     @Published var values: [String: Double]
     @Published var styleName: String
+    /// Looks you saved yourself. With this many dials, the built-in styles are
+    /// a starting point, not a menu — anything you tune is worth keeping.
+    @Published private(set) var customStyles: [String: [String: Double]]
 
     private static let storeKey = "tunables"
     private static let styleKey = "style"
+    private static let customKey = "customStyles"
 
     init() {
         var v = Specs.defaults
@@ -163,6 +167,8 @@ final class Params: ObservableObject {
         }
         values = v
         styleName = UserDefaults.standard.string(forKey: Self.styleKey) ?? Specs.styles[0].0
+        customStyles = (UserDefaults.standard.dictionary(forKey: Self.customKey)
+                        as? [String: [String: Double]]) ?? [:]
     }
 
     subscript(name: String) -> Double {
@@ -170,12 +176,38 @@ final class Params: ObservableObject {
         set { values[name] = newValue }
     }
 
+    /// Custom styles are stored whole rather than as a sparse patch: a built-in
+    /// only names what it cares about so the others compose, but a look you
+    /// saved is the look you saw, and inheriting stray values from whatever was
+    /// loaded before would not reproduce it.
+    var customStyleNames: [String] { customStyles.keys.sorted() }
+
     func apply(style name: String) {
-        guard let style = Specs.styles.first(where: { $0.0 == name }) else { return }
-        for (k, v) in style.1 where Specs.all[k] != nil { values[k] = v }
+        if let custom = customStyles[name] {
+            for (k, v) in custom where Specs.all[k] != nil { values[k] = v }
+        } else if let style = Specs.styles.first(where: { $0.0 == name }) {
+            for (k, v) in style.1 where Specs.all[k] != nil { values[k] = v }
+        } else {
+            return
+        }
         styleName = name
         UserDefaults.standard.set(name, forKey: Self.styleKey)
         save()
+    }
+
+    func saveCurrentStyle(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        customStyles[trimmed] = values
+        UserDefaults.standard.set(customStyles, forKey: Self.customKey)
+        styleName = trimmed
+        UserDefaults.standard.set(trimmed, forKey: Self.styleKey)
+    }
+
+    func deleteStyle(named name: String) {
+        guard customStyles.removeValue(forKey: name) != nil else { return }
+        UserDefaults.standard.set(customStyles, forKey: Self.customKey)
+        if styleName == name { styleName = Specs.styles[0].0 }
     }
 
     func resetAll() {
@@ -185,6 +217,12 @@ final class Params: ObservableObject {
 
     func save() { UserDefaults.standard.set(values, forKey: Self.storeKey) }
 
+    /// Radius of everything the widget draws, as a fraction of its height —
+    /// `halo` times the fitted ring extent, capped where the shader caps it.
+    /// The click region is defined against this, so the widget only swallows
+    /// clicks where there is something to click on.
+    func haloRadiusFraction() -> Double { 0.49 }   // PANEL_FADE_MAX
+
     /// Shadow radius as a fraction of the widget's height, after the shader's
     /// per-style shrink. Mirrors the size block in BlackHole.metal — the
     /// infall animation has to know where the horizon actually is on screen,
@@ -193,12 +231,9 @@ final class Params: ObservableObject {
     func shadowRadiusFraction() -> Double {
         let rin = max(self["DISK_INNER"], 1.6)
         let rout = max(self["DISK_OUTER"], rin + 0.5)
-        var rh = max(self["HOLE_FILL"], 1e-4)
-        let bCrit = 2.5980762
-        let diskExtent = (rout / bCrit) * rh
-        let room = 0.34
-        if diskExtent > room { rh *= room / diskExtent }
-        return rh
+        let lit = rin + (rout - rin) * 0.78          // matches `lit` in the shader
+        let halo = min(max(self["HALO"], 1.0), 3.0)
+        return (0.49 / halo) * 2.5980762 / lit
     }
 
     /// Snapshot the tunables into the GPU struct. Resolution, the background
@@ -211,7 +246,7 @@ final class Params: ObservableObject {
         u.time = time
         u.resX = width
         u.resY = height
-        u.holeFill = f("HOLE_FILL")
+        u.halo = f("HALO")
 
         u.lensDepth   = f("LENS_DEPTH")
         u.lensFalloff = f("LENS_FALLOFF")
@@ -251,6 +286,7 @@ final class Params: ObservableObject {
         // Mass just fell in, so the hole is briefly heavier and bends harder.
         u.lensBoost  = 1 + 0.12 * flare
         u.ringGain   = f("RING_GAIN")
+
         return u
     }
 }

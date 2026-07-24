@@ -10,9 +10,11 @@ struct Uniforms {
     var time: Float = 0
     var resX: Float = 1
     var resY: Float = 1
-    /// Shadow radius as a fraction of the widget's height. The widget is the
-    /// frame, so this stays constant and resizing the window resizes the hole.
-    var holeFill: Float = 0
+    /// How far the lensed background reaches beyond the ring, as a multiple of
+    /// it. The composition always fills the widget, so this is the only thing
+    /// that decides the proportions — the ring's size on screen comes from the
+    /// window.
+    var halo: Float = 1.25
 
     var lensDepth: Float = 0
     var lensFalloff: Float = 0
@@ -72,4 +74,9 @@ struct Uniforms {
     var lensBoost: Float = 1
     /// Extra brightness for higher-order disk images — the photon ring.
     var ringGain: Float = 0
+
+    var pad0: Float = 0
+    var pad1: Float = 0
+    var pad2: Float = 0
+    var pad3: Float = 0
 }

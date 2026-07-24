@@ -42,6 +42,15 @@ final class Renderer: NSObject, MTKViewDelegate {
     var params: Params
     var lens: LensSource = .screen
 
+    /// A mipmapped copy of the current capture frame.
+    ///
+    /// Frames arrive from CVMetalTextureCache with a single level, and a single
+    /// level is exactly what makes a lensed image alias: the shader asks for a
+    /// footprint spanning dozens of texels and there is nothing to give it but
+    /// the top mip. One blit and a mip chain per frame is cheap next to what it
+    /// buys.
+    private var mipped: MTLTexture?
+
     private var time: Float = 0
     private var diskPhase: Float = 0
     private var driftClock: Float = 0
@@ -119,6 +128,29 @@ final class Renderer: NSObject, MTKViewDelegate {
         return library
     }
 
+    /// Copy this frame into a mipmapped texture and build the chain. Returns
+    /// nil if the texture could not be allocated, in which case the caller
+    /// falls back to the flat capture and simply aliases.
+    private func mipmapped(_ source: MTLTexture, in buffer: MTLCommandBuffer) -> MTLTexture? {
+        if mipped?.width != source.width || mipped?.height != source.height {
+            let d = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: source.pixelFormat, width: source.width,
+                height: source.height, mipmapped: true)
+            d.usage = [.shaderRead, .renderTarget]
+            d.storageMode = .private
+            mipped = device.makeTexture(descriptor: d)
+        }
+        guard let mipped, let blit = buffer.makeBlitCommandEncoder() else { return nil }
+        blit.copy(from: source, sourceSlice: 0, sourceLevel: 0,
+                  sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: source.width, height: source.height, depth: 1),
+                  to: mipped, destinationSlice: 0, destinationLevel: 0,
+                  destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        blit.generateMipmaps(for: mipped)
+        blit.endEncoding()
+        return mipped
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
@@ -156,12 +188,11 @@ final class Renderer: NSObject, MTKViewDelegate {
         // The glow costs four extra passes; skip them outright when it is off
         // rather than blurring a texture nobody will read.
         let wantsBloom = strength > 0.001 && bloom.resize(width: Int(w), height: Int(h))
-        guard let sceneTarget = wantsBloom ? bloom.scenePass() : pass,
-              let encoder = buffer.makeRenderCommandEncoder(descriptor: sceneTarget)
-        else { return }
 
         // Live screen content is not a loaded texture — it arrives per frame,
-        // already cropped to the widget where the OS supports it.
+        // already cropped to the widget where the OS supports it. This has to
+        // happen before the render encoder opens: building the mip chain is a
+        // blit, and a command buffer will only have one encoder at a time.
         var texture = placeholder
         var fit = BackgroundFit()
         var hasSky = false
@@ -172,13 +203,17 @@ final class Renderer: NSObject, MTKViewDelegate {
             // display, and sampling that would show a slice of the wrong screen.
             if let frame, let window = view.window, let screen = window.screen,
                screen.displayID == frame.displayID {
-                texture = frame.texture
+                texture = mipmapped(frame.texture, in: buffer) ?? frame.texture
                 fit = frame.cropped
                     ? BackgroundFit()
                     : BackgroundFit.screenRect(window: window.frame, display: screen.frame)
                 hasSky = true
             }
         }
+
+        guard let sceneTarget = wantsBloom ? bloom.scenePass() : pass,
+              let encoder = buffer.makeRenderCommandEncoder(descriptor: sceneTarget)
+        else { return }
 
         var u = params.uniforms(time: time, diskPhase: diskPhase,
                                 width: max(w, 1), height: max(h, 1),

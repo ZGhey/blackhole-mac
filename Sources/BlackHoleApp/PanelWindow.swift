@@ -39,10 +39,11 @@ enum SwallowAction: String, CaseIterable, Identifiable {
 /// not there at all.
 @MainActor
 final class PanelController {
-    /// Fraction of the widget's half-height that the drawn disc occupies —
-    /// PANEL_FADE_END in the shader. The hit region and the resize rim are both
-    /// defined against it, so the interactive shape is the visible shape.
-    static let silhouetteRadius = 0.49
+    /// The drawn disc is sized from the hole now, so the hit region asks the
+    /// parameters rather than assuming a fixed fraction of the window.
+    static func silhouetteRadius(_ params: Params) -> Double {
+        params.haloRadiusFraction()
+    }
 
     private var panel: NSPanel?
     private var content: PanelContentView?
@@ -110,6 +111,8 @@ final class PanelController {
 
         panel = p
         content = view
+        model.originDisplay = panelScreen?.displayID
+        p.alphaValue = model.hidden ? 0 : 1
         syncCaptureExclusion()
         lensChanged()
         startPositionTimer()
@@ -123,6 +126,14 @@ final class PanelController {
     private func syncCaptureExclusion() {
         let ids = Set([panel?.windowNumber].compactMap { $0 }.map { CGWindowID($0) })
         ScreenCapture.shared.setExcludedWindows(ids)
+    }
+
+    /// Fade rather than order out: the capture stream, the position timers and
+    /// the hit region all stay exactly as they were, so unhiding is instant.
+    func hiddenChanged() {
+        guard let panel else { return }
+        panel.animator().alphaValue = model.hidden ? 0 : 1
+        panel.ignoresMouseEvents = model.hidden
     }
 
     func lensChanged() {
@@ -142,7 +153,7 @@ final class PanelController {
     /// streaming the *main* display while the widget sat on a second one — with
     /// no screen-change notification to ever correct it, because the window
     /// never changed screens. Geometry always answers.
-    private var panelScreen: NSScreen? {
+    var panelScreen: NSScreen? {
         guard let panel else { return NSScreen.main }
         if let screen = panel.screen { return screen }
         let frame = panel.frame
@@ -159,7 +170,11 @@ final class PanelController {
         let centre = NotificationCenter.default
         for name in [NSWindow.didChangeScreenNotification, NSWindow.didMoveNotification] {
             observers.append(centre.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.lensChanged() }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.model.originDisplay = self.panelScreen?.displayID
+                    self.lensChanged()
+                }
             })
         }
         observers.append(centre.addObserver(
@@ -179,6 +194,25 @@ final class PanelController {
         guard let screen = NSScreen.main else { return CGPoint(x: 200, y: 200) }
         let f = screen.visibleFrame
         return CGPoint(x: f.maxX - size - 40, y: f.maxY - size - 40)
+    }
+
+    /// Nudge it right up against an edge. Dragging by hand cannot reach the
+    /// last pixel, and the composition fills the window now, so flush against
+    /// the top is a real position rather than a gap.
+    func snapToEdge(_ edge: NSRectEdge) {
+        guard let panel, let screen = panelScreen else { return }
+        var frame = panel.frame
+        let b = screen.frame
+        switch edge {
+        case .minX: frame.origin.x = b.minX
+        case .maxX: frame.origin.x = b.maxX - frame.width
+        case .minY: frame.origin.y = b.minY
+        case .maxY: frame.origin.y = b.maxY - frame.height
+        @unknown default: return
+        }
+        panel.setFrame(frame, display: true)
+        model.origin = frame.origin
+        lensChanged()
     }
 
     /// A saved position can name a display that is no longer attached — unplug
@@ -208,7 +242,11 @@ final class PanelController {
     func settleOntoOneScreen() {
         guard let panel, let screen = panelScreen else { return }
         var frame = panel.frame
-        let bounds = screen.visibleFrame
+        // `frame`, not `visibleFrame`: the latter stops at the menu bar, which
+        // is why the widget could not be pushed to the very top of a screen. It
+        // sits below the menu bar in the window list anyway, so letting it go
+        // up there costs nothing.
+        let bounds = screen.frame
         guard !bounds.contains(frame) else { return }
         frame.origin.x = min(max(frame.minX, bounds.minX), bounds.maxX - frame.width)
         frame.origin.y = min(max(frame.minY, bounds.minY), bounds.maxY - frame.height)
@@ -301,7 +339,7 @@ final class PanelController {
             return
         }
         let frame = panel.frame
-        let radius = frame.height * Self.silhouetteRadius
+        let radius = frame.height * Self.silhouetteRadius(params)
         let centre = CGPoint(x: frame.midX, y: frame.midY)
         let mouse = NSEvent.mouseLocation
         let inside = hypot(mouse.x - centre.x, mouse.y - centre.y) <= radius
@@ -366,6 +404,10 @@ final class PanelContentView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         defer { dragging = false; isInteracting = false }
+        if event.clickCount == 2 {
+            Shared.advanced.show()
+            return
+        }
         guard dragging else { return }
         if let window, let model { model.origin = window.frame.origin }
         controller?.settleOntoOneScreen()

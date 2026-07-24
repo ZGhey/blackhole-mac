@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Shared.model.onLensChange = { Shared.widget.lensChanged() }
             Shared.model.onPositionChange = { Shared.widget.positionModeChanged() }
             Shared.model.onSizeChange = { Shared.widget.sizeChanged() }
+            Shared.model.onHiddenChange = { Shared.widget.hiddenChanged() }
+            HotKey.install { Shared.model.hidden.toggle() }
             Shared.widget.isEnabled = true
         }
     }
@@ -120,15 +122,35 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var rendererError: String?
+    /// Out of the way for a moment, without quitting and losing the position.
+    @Published var hidden = false {
+        didSet { onHiddenChange?() }
+    }
 
+    /// Positions are kept per display. A widget parked in the corner of a
+    /// laptop screen has no business landing in the middle of a 5K one when you
+    /// dock, and the reverse leaves it off the edge entirely.
     var origin: CGPoint? {
         didSet {
-            guard let origin else { return }
-            UserDefaults.standard.set(["x": origin.x, "y": origin.y], forKey: "origin")
+            guard let origin, let key = originKey else { return }
+            UserDefaults.standard.set(["x": origin.x, "y": origin.y], forKey: key)
         }
+    }
+    /// Which display the stored position belongs to; set by PanelController.
+    var originDisplay: CGDirectDisplayID? {
+        didSet {
+            guard originDisplay != oldValue, let key = originKey,
+                  let p = UserDefaults.standard.dictionary(forKey: key) as? [String: Double],
+                  let x = p["x"], let y = p["y"] else { return }
+            origin = CGPoint(x: x, y: y)
+        }
+    }
+    private var originKey: String? {
+        originDisplay.map { "origin-\($0)" }
     }
 
     var onLensChange: (() -> Void)?
+    var onHiddenChange: (() -> Void)?
     var onPositionChange: (() -> Void)?
     var onSizeChange: (() -> Void)?
 
@@ -151,7 +173,8 @@ final class AppModel: ObservableObject {
         launchAtLogin = LoginItem.isEnabled
         position = PanelPosition(rawValue: d.string(forKey: "position") ?? "") ?? .free
         swallowAction = SwallowAction(rawValue: d.string(forKey: "swallowAction") ?? "") ?? .animateOnly
-        if let p = d.dictionary(forKey: "origin") as? [String: Double],
+        if let main = NSScreen.main?.displayID,
+           let p = d.dictionary(forKey: "origin-\(main)") as? [String: Double],
            let x = p["x"], let y = p["y"] {
             origin = CGPoint(x: x, y: y)
         }
@@ -192,6 +215,19 @@ struct MenuContent: View {
             ForEach(Specs.styles, id: \.0) { name, _ in
                 Button(check(params.styleName == name) + name) { params.apply(style: name) }
             }
+            if !params.customStyleNames.isEmpty {
+                Divider()
+                ForEach(params.customStyleNames, id: \.self) { name in
+                    Button(check(params.styleName == name) + name) { params.apply(style: name) }
+                }
+            }
+            Divider()
+            Button("Save current as…") { StylePrompt.saveCurrent(into: params) }
+            if params.customStyles[params.styleName] != nil {
+                Button("Delete “\(params.styleName)”") {
+                    params.deleteStyle(named: params.styleName)
+                }
+            }
         }
 
         Menu("Lens") {
@@ -211,6 +247,13 @@ struct MenuContent: View {
             ForEach(PanelPosition.allCases) { p in
                 Button(check(model.position == p) + p.label) { model.position = p }
             }
+            if model.position == .free {
+                Divider()
+                Button("Snap to top") { Shared.widget.snapToEdge(.maxY) }
+                Button("Snap to bottom") { Shared.widget.snapToEdge(.minY) }
+                Button("Snap to left") { Shared.widget.snapToEdge(.minX) }
+                Button("Snap to right") { Shared.widget.snapToEdge(.maxX) }
+            }
         }
 
         Menu("Dropped files") {
@@ -221,6 +264,7 @@ struct MenuContent: View {
 
         Divider()
 
+        Button(model.hidden ? "Show (⌥⌘B)" : "Hide (⌥⌘B)") { model.hidden.toggle() }
         Button(check(model.launchAtLogin) + "Launch at login") {
             model.launchAtLogin.toggle()
         }
@@ -257,5 +301,30 @@ final class AdvancedWindow {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+
+// -------------------------------------------------------------- style save --
+
+/// Asking for a name. A menu-bar app has no window to hang a sheet on, so this
+/// is a plain modal alert — the one moment the app is allowed to interrupt.
+@MainActor
+enum StylePrompt {
+    static func saveCurrent(into params: Params) {
+        let alert = NSAlert()
+        alert.messageText = "Save this look"
+        alert.informativeText = "Every slider as it stands now, under a name of your choosing."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = params.customStyles[params.styleName] != nil
+            ? params.styleName : "\(params.styleName) copy"
+        alert.accessoryView = field
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn {
+            params.saveCurrentStyle(named: field.stringValue)
+        }
     }
 }

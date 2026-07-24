@@ -22,7 +22,9 @@ the menu bar (⚫).
 
 Everything is in the menu-bar menu.
 
-- **Size** — Small, Medium, Large. Dragging anywhere on the disc moves it.
+- **Size** — Small, Medium, Large. Dragging anywhere on the disc moves it, and
+  Position ▸ Snap puts it flush against an edge, which dragging by hand cannot
+  quite reach.
 - **Style** — Inferno, Gargantua, M87\* donut, Face-on ember, Quasar, Blazar,
   Pure lens, Zen. These disagree wildly about how wide the accretion disk is
   (7 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
@@ -45,6 +47,36 @@ Everything is in the menu-bar menu.
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
   so it does nothing under `swift run`.
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
+  Anything you tune can be kept: Style ▸ **Save current as…**. Custom looks are
+  stored whole rather than as a sparse patch, because a look you saved is the
+  look you saw, and inheriting stray values from whatever was loaded before
+  would not reproduce it.
+- **⌥⌘B** hides and shows it. Carbon's `RegisterEventHotKey`, deliberately not
+  an `NSEvent` monitor — those need the Accessibility permission for key
+  events, and a widget you want to hide should not demand the right to watch
+  everything you type. Hiding fades it out and leaves the capture stream and
+  timers alone, so coming back is instant.
+- Positions are remembered **per display**. A widget parked in the corner of a
+  laptop screen has no business landing in the middle of a 5K one when you
+  dock, and the reverse leaves it off the edge entirely.
+
+## One dial for the proportions
+
+The composition always fills the window, so the window *is* the visible disc —
+there is no dead border to catch on the edge of a screen. That leaves exactly
+one thing to decide: **`HALO`**, how much lensed background rings the disk, as a
+multiple of the disk's own radius. 1.0 is the warp hugging it exactly.
+
+Two earlier dials for this are gone, and it is worth saying why rather than
+quietly dropping them: they cancelled out. Working the algebra through,
+`rh = (room·B_CRIT/lit)·MAX/(halo·room)` — `room` divides out, and the same is
+true of the hole's own scale. All they ever changed was how much of the window
+the composition declined to use, which is to say they existed to create the dead
+border. Size belongs to the window; proportion belongs to `HALO`.
+
+The extent being fitted is what actually *glows*, not the disk's nominal outer
+edge: emission has faded out by `rout*0.70`, so measuring against `DISK_OUTER`
+hands roughly a third of the frame to disk that emits nothing.
 
 ## The window is square; nothing else is
 
@@ -162,6 +194,22 @@ extra disk crossing is one more turn. They are the sharpest structure in the
 picture and also the faintest, because the near disk absorbed them the whole
 way, so `RING_GAIN` weights emission by image order to pull them back out
 without inventing anything.
+
+**Sampling the lensed background** uses real screen-space derivatives and a
+mipmapped copy of the capture, so the hardware can pick a mip that matches the
+footprint. It is worth being precise about what that does and does not fix.
+Measured across the widget, the footprint is about *one texel* almost
+everywhere, rising to 4–16 only at the photon ring and the shadow's edge — so
+there is usually no coarser level to pick, and correct mip selection cannot cure
+the moiré a periodic test pattern produces. (Supersampling the lookup four ways
+was tried and measured: no benefit, three extra fetches.) What it does fix is
+the ring and the higher-order images, where the compression is real. Real screen
+content is not periodic and does not beat the way a checkerboard does.
+
+The disk's own higher-order images are softened by image order instead: each
+further image packs a whole disk into a thinner ring, far past what the pixel
+grid can carry, so fading their contrast is the cheapest honest antialiasing
+available — the structure is still integrated, just not sharpened into aliasing.
 
 **Bloom** is four extra passes — bright-pass and quarter-res downsample,
 separable Gaussian, composite — because a glow has to come from neighbouring
