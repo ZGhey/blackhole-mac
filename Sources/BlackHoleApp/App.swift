@@ -168,6 +168,9 @@ final class AppModel: ObservableObject {
     /// Which display the stored position belongs to; set by PanelController.
     var originDisplay: CGDirectDisplayID? {
         didSet {
+            if let originDisplay {
+                UserDefaults.standard.set(Int(originDisplay), forKey: "lastDisplay")
+            }
             guard originDisplay != oldValue, let key = originKey,
                   let p = UserDefaults.standard.dictionary(forKey: key) as? [String: Double],
                   let x = p["x"], let y = p["y"] else { return }
@@ -204,8 +207,16 @@ final class AppModel: ObservableObject {
         position = PanelPosition(rawValue: d.string(forKey: "position") ?? "") ?? .free
         swallowAction = SwallowAction(rawValue: d.string(forKey: "swallowAction") ?? "") ?? .animateOnly
         noticesPointer = d.object(forKey: "noticesPointer") as? Bool ?? true
-        if let main = NSScreen.main?.displayID,
-           let p = d.dictionary(forKey: "origin-\(main)") as? [String: Double],
+        // The display the widget was last on, not whichever one happens to be
+        // main at launch. Reading main's slot means a widget parked on a second
+        // screen comes back on the first one after every restart — and then the
+        // capture has to stop and start again on the right display as soon as
+        // it is dragged home.
+        let last = (d.object(forKey: "lastDisplay") as? Int).map { CGDirectDisplayID($0) }
+        let attached = Set(NSScreen.screens.compactMap(\.displayID))
+        let preferred = last.flatMap { attached.contains($0) ? $0 : nil } ?? NSScreen.main?.displayID
+        if let preferred,
+           let p = d.dictionary(forKey: "origin-\(preferred)") as? [String: Double],
            let x = p["x"], let y = p["y"] {
             origin = CGPoint(x: x, y: y)
         }

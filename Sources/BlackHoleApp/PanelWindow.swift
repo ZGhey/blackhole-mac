@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -39,6 +40,10 @@ enum SwallowAction: String, CaseIterable, Identifiable {
 /// not there at all.
 @MainActor
 final class PanelController {
+    /// Placement is the one part of this that depends on when AppKit decides
+    /// to answer, so it is the one part worth being able to read back.
+    private static let log = Logger(subsystem: "dev.s13k.blackhole-app", category: "panel")
+
     /// The drawn disc is sized from the hole now, so the hit region asks the
     /// parameters rather than assuming a fixed fraction of the window.
     static func silhouetteRadius(_ params: Params) -> Double {
@@ -111,6 +116,7 @@ final class PanelController {
 
         panel = p
         content = view
+        Self.log.notice("panel placed at \(origin.x, privacy: .public),\(origin.y, privacy: .public) size \(size, privacy: .public) -> screen \(self.panelScreen?.displayID ?? 0, privacy: .public) (AppKit says \(p.screen?.displayID ?? 0, privacy: .public))")
         model.originDisplay = panelScreen?.displayID
         p.alphaValue = model.hidden ? 0 : 1
         syncCaptureExclusion()
@@ -171,7 +177,8 @@ final class PanelController {
         for name in [NSWindow.didChangeScreenNotification, NSWindow.didMoveNotification] {
             observers.append(centre.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, let p = self.panel else { return }
+                    Self.log.notice("\(name.rawValue, privacy: .public): frame \(p.frame.origin.x, privacy: .public),\(p.frame.origin.y, privacy: .public) -> screen \(self.panelScreen?.displayID ?? 0, privacy: .public)")
                     self.model.originDisplay = self.panelScreen?.displayID
                     self.lensChanged()
                 }
@@ -277,7 +284,7 @@ final class PanelController {
         // teleporting), 4 Hz is plenty for a window that only moves when dragged.
         let interval = model.position == .followCursor ? 1.0 / 60 : 0.25
         positionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.stepPosition() }
+            MainActor.assumeIsolated { self?.stepPosition() }
         }
     }
 
@@ -322,9 +329,15 @@ final class PanelController {
     ///
     /// 60 Hz because the alternative is a click arriving before the window has
     /// noticed the pointer; the work is one distance comparison.
+    ///
+    /// `MainActor.assumeIsolated`, not `Task { @MainActor in }`. The timer is
+    /// scheduled from the main actor so it fires on the main run loop already —
+    /// wrapping the body in a Task allocated one and hopped the executor sixty
+    /// times a second to arrive on the thread it was on, which cost more than
+    /// the work it was guarding. Same reasoning for the position timer.
     private func startHitTestTimer() {
         hitTestTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateHitRegion() }
+            MainActor.assumeIsolated { self?.updateHitRegion() }
         }
     }
 

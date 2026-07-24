@@ -1,6 +1,7 @@
 import Foundation
 import Metal
 import MetalKit
+import OSLog
 
 enum RendererError: LocalizedError {
     case noDevice
@@ -24,6 +25,8 @@ enum RendererError: LocalizedError {
 /// uniform struct per frame. There is no geometry and no render graph — the
 /// whole image is the fragment shader, exactly as it was in Ghostty.
 final class Renderer: NSObject, MTKViewDelegate {
+    private static let log = Logger(subsystem: "dev.s13k.blackhole-app", category: "render")
+
     let device: MTLDevice
     private let placeholder: MTLTexture
 
@@ -46,6 +49,19 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// the top mip. One blit and a mip chain per frame is cheap next to what it
     /// buys.
     private var mipped: MTLTexture?
+
+    /// Average colour of the captured region, read back off the top of the mip
+    /// chain — the 1x1 level *is* the mean, so it costs one 4-byte copy rather
+    /// than a reduction pass. Filled by a completion handler, so it lags the
+    /// frame it came from; the smoothing below makes that irrelevant.
+    private let luminanceBuffer: MTLBuffer?
+    /// Exponentially smoothed luma of the region behind the widget, 0…1.
+    private var backgroundLuma: Float = 0
+    private var haveLuma = false
+    /// Set on a Metal completion thread, read on the main thread. A `Float`
+    /// write is atomic on every architecture this runs on and the value is a
+    /// slowly-varying average, so a stale read costs nothing worth a lock.
+    private nonisolated(unsafe) static var latestLuma: Float = -1
 
     private var time: Float = 0
     private var diskPhase: Float = 0
@@ -113,6 +129,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         self.sampler = sampler
         self.params = params
         self.placeholder = PlaceholderTexture.make(device: device)
+        // 256 rather than 4: a texture-to-buffer copy wants its bytesPerRow
+        // aligned, and one page is cheaper than remembering the rule.
+        self.luminanceBuffer = device.makeBuffer(length: 256, options: .storageModeShared)
         super.init()
     }
 
@@ -156,8 +175,40 @@ final class Renderer: NSObject, MTKViewDelegate {
                   to: mipped, destinationSlice: 0, destinationLevel: 0,
                   destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
         blit.generateMipmaps(for: mipped)
+        // The last level is one texel: the mean of everything behind the
+        // widget. Take it while the blit encoder is already open — it is the
+        // whole cost of knowing whether the widget is sitting on a dark
+        // terminal or a bright photograph.
+        if let luminanceBuffer, mipped.mipmapLevelCount > 0 {
+            blit.copy(from: mipped, sourceSlice: 0, sourceLevel: mipped.mipmapLevelCount - 1,
+                      sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                      sourceSize: MTLSize(width: 1, height: 1, depth: 1),
+                      to: luminanceBuffer, destinationOffset: 0,
+                      destinationBytesPerRow: 256, destinationBytesPerImage: 256)
+            buffer.addCompletedHandler { _ in
+                let px = luminanceBuffer.contents().assumingMemoryBound(to: UInt8.self)
+                // bgra8Unorm, and raw sRGB bytes — the same space everything
+                // else here composites in, so no linearization.
+                let b = Float(px[0]), g = Float(px[1]), r = Float(px[2])
+                Self.latestLuma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+            }
+        }
         blit.endEncoding()
         return mipped
+    }
+
+    /// How much to hold the lensed screen back so the disk still reads against
+    /// it. Over a dark terminal this is 1 and nothing happens; over a bright
+    /// photograph the background is the brighter object and the disk washes
+    /// out — measured over a real capture, disk-to-surround Michelson contrast
+    /// runs 0.18 undimmed and 0.44 at 0.5, while the disk itself only falls
+    /// from 160 to 148. The background is what gives way, not the hole.
+    ///
+    /// Aiming for a *level* rather than applying a curve keeps it stable: the
+    /// widget dims exactly as much as whatever it is sitting on requires.
+    private func adaptiveDim() -> Float {
+        guard haveLuma else { return 1 }
+        return min(max(0.22 / max(backgroundLuma, 1e-3), 0.35), 1)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -167,6 +218,21 @@ final class Renderer: NSObject, MTKViewDelegate {
         let dt = min(max(now - lastDraw, 0), 0.1)   // clamp: a stalled frame must not jump the animation
         lastDraw = now
         time += Float(dt)
+
+        // Smooth the readback hard. Whatever is behind the widget changes in
+        // steps — a window opens, a video cuts to a dark frame — and the
+        // widget reacting to that in one frame would read as a flicker rather
+        // than as an eye adjusting. ~1 s to settle at 60 fps.
+        if Self.latestLuma >= 0 {
+            let target = Self.latestLuma
+            if haveLuma {
+                backgroundLuma += (target - backgroundLuma) * min(Float(dt) * 3, 1)
+            } else {
+                backgroundLuma = target
+                haveLuma = true
+                Self.log.notice("background luma \(target, privacy: .public) -> dim \(self.adaptiveDim(), privacy: .public)")
+            }
+        }
 
         // Flares and audio modulate how fast the disk turns, so the phase is
         // integrated here rather than derived from `time` in the shader — a
@@ -285,6 +351,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         u.feedG = fed.colour.y
         u.feedB = fed.colour.z
         u.plunge = Float(params["PLUNGE"])
+        // BG_DIM stays the user's ceiling; the adaptation only ever pulls it
+        // further down, and only when there is a capture to measure.
+        if hasSky {
+            let adapt = Float(params["BG_ADAPT"])
+            u.bgDim *= 1 + (adaptiveDim() - 1) * adapt
+        }
         if lowPower { u.nSteps = max(u.nSteps * 0.6, 12) }
 
         encoder.setRenderPipelineState(pipeline)
