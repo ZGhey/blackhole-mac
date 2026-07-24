@@ -17,6 +17,7 @@ struct RenderView: View {
     var body: some View {
         MetalView(params: params, lens: model.lens,
                   frameRate: system.frameRate(preferred: model.frameRate.rawValue),
+                  paused: model.hidden,
                   onError: { model.rendererError = $0 })
     }
 }
@@ -26,6 +27,9 @@ struct MetalView: NSViewRepresentable {
     @ObservedObject var params: Params
     let lens: LensSource
     let frameRate: Int
+    /// Hidden means hidden: a widget nobody can see has no business
+    /// integrating geodesics sixty times a second.
+    let paused: Bool
     /// Startup failures (a Metal shader typo, most likely) surface in the UI
     /// rather than as a silently black window.
     let onError: (String) -> Void
@@ -52,7 +56,7 @@ struct MetalView: NSViewRepresentable {
         view.delegate = renderer
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = true
-        view.isPaused = false
+        view.isPaused = paused
         view.enableSetNeedsDisplay = false
         // A widget-sized panel is a fraction of a screen's pixels, so it runs at
         // the display's own rate — unless the battery says otherwise.
@@ -72,5 +76,6 @@ struct MetalView: NSViewRepresentable {
         renderer.params = params
         renderer.lens = lens
         view.preferredFramesPerSecond = frameRate
+        view.isPaused = paused
     }
 }

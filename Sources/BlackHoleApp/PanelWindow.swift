@@ -136,11 +136,51 @@ final class PanelController {
 
     /// Fade rather than order out: the capture stream, the position timers and
     /// the hit region all stay exactly as they were, so unhiding is instant.
+    /// Hiding used to be cosmetic: alpha 0, everything else still running. That
+    /// is the wrong thing for the one moment people reach for it — sharing a
+    /// screen — because the widget goes on holding a ScreenCaptureKit stream,
+    /// and macOS goes on saying so in the menu bar.
+    ///
+    /// So hiding now really stops: the stream is torn down and the view stops
+    /// drawing. The teardown waits for the fade to finish, or the lensed
+    /// background would vanish a beat before the widget does.
     func hiddenChanged() {
         guard let panel else { return }
-        panel.animator().alphaValue = model.hidden ? 0 : 1
         panel.ignoresMouseEvents = model.hidden
+        if model.hidden {
+            // The hit-region poll would otherwise keep handing the window back
+            // its clicks the moment the pointer crossed where the widget used
+            // to be — a hidden widget that still eats clicks is worse than a
+            // visible one. Stopping it also parks the last 60 Hz timer in the
+            // process. Proximity goes with it, or a cursor hidden inside the
+            // hole at the moment you hide the widget never comes back: the
+            // render loop that would have restored it is paused.
+            hitTestTimer?.invalidate()
+            hitTestTimer = nil
+            Proximity.shared.setEnabled(false)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Self.fade
+                panel.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                guard let self, self.model.hidden else { return }   // shown again mid-fade
+                ScreenCapture.shared.stop()
+                Self.log.notice("hidden: capture stopped, rendering paused")
+            }
+        } else {
+            // Back on before the fade, so the first frames have something to
+            // lens; the capture starts in about 200 ms and the fade covers it.
+            lensChanged()
+            startHitTestTimer()
+            Proximity.shared.setEnabled(model.noticesPointer)
+            Self.log.notice("shown: capture restarting, rendering resumed")
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Self.fade
+                panel.animator().alphaValue = 1
+            }
+        }
     }
+
+    private static let fade: TimeInterval = 0.25
 
     func lensChanged() {
         guard isEnabled, model.lens == .screen else {
