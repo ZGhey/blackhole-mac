@@ -28,7 +28,7 @@ enum Specs {
         "SPOT_GAIN", "SPOT_RADIUS",
         "DISK_TEMP", "DOPPLER_MIX", "DISK_BEAM", "EXPOSURE", "RING_GAIN",
         "DISK_RATE",
-        "BLOOM", "BLOOM_THRESHOLD", "N_STEPS", "BG_DIM", "BG_ADAPT", "BG_BLUR",
+        "BLOOM", "BLOOM_THRESHOLD", "N_STEPS", "BG_DIM", "BG_BLUR",
     ]
 
     static let all: [String: ParamSpec] = [
@@ -63,7 +63,6 @@ enum Specs {
         "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.85, "How bright a pixel must be before it starts to glow. Most of the disk sits around 0.7, so anything much below that blooms the disk into its own neighbours and flattens the streaks into one sheet — this wants to catch the inner edge and the photon ring, not the whole thing"),
         "N_STEPS":       ParamSpec(8...128, "Render", 48, "Geodesic integration steps per pixel — the main GPU dial. Only pixels near the hole pay it"),
         "BG_DIM":        ParamSpec(0.0...1.0, "Render", 1.0, "Dims the lensed screen so the disk reads brighter against busy content"),
-        "BG_ADAPT":      ParamSpec(0.0...1.0, "Render", 1.0, "How much the widget dims the screen behind it *by itself*, according to how bright that screen is. On a dark terminal it does nothing; on a bright photograph the wallpaper is the brighter object and the disk washes out into it, so the background gives way instead. 0 turns the adaptation off and leaves BG_DIM alone"),
         "BG_BLUR":       ParamSpec(0.0...3.0, "Render", 1.5, "Softens the lensed screen in proportion to how hard the lens is squeezing it — the corners stay pixel-exact, the compressed band around the ring turns to glow. 0 is the honest sample, which over a page of text reproduces every line of it a pixel apart"),
     ]
 
