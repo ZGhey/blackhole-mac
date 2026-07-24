@@ -16,7 +16,7 @@ struct RenderView: View {
 
     var body: some View {
         MetalView(params: params, lens: model.lens,
-                  frameRate: system.frameRate(preferred: 60),
+                  frameRate: system.frameRate(preferred: model.frameRate.rawValue),
                   onError: { model.rendererError = $0 })
     }
 }

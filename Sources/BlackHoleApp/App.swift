@@ -82,8 +82,27 @@ enum WidgetSize: String, CaseIterable, Identifiable {
     }
 }
 
+/// How often to redraw. Not a quality dial — the geodesics are the same either
+/// way — but the widget is the kind of thing that runs all day, so what it
+/// costs while you are not looking at it is a fair question to let you answer.
+enum FrameRate: Int, CaseIterable, Identifiable {
+    case fps60 = 60, fps30 = 30, fps15 = 15
+
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .fps60: return "60 fps"
+        case .fps30: return "30 fps"
+        case .fps15: return "15 fps"
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
+    @Published var frameRate: FrameRate {
+        didSet { UserDefaults.standard.set(frameRate.rawValue, forKey: "frameRate") }
+    }
     @Published var size: Double {
         didSet {
             UserDefaults.standard.set(size, forKey: "size")
@@ -177,6 +196,7 @@ final class AppModel: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
+        frameRate = FrameRate(rawValue: d.object(forKey: "frameRate") as? Int ?? 0) ?? .fps60
         size = d.object(forKey: "size") as? Double ?? WidgetSize.medium.points
         lens = LensSource(rawValue: d.string(forKey: "lens") ?? "") ?? .screen
         audioReactive = d.bool(forKey: "audioReactive")
@@ -264,6 +284,12 @@ struct MenuContent: View {
                 Button("Snap to bottom") { Shared.widget.snapToEdge(.minY) }
                 Button("Snap to left") { Shared.widget.snapToEdge(.minX) }
                 Button("Snap to right") { Shared.widget.snapToEdge(.maxX) }
+            }
+        }
+
+        Menu("Frame rate") {
+            ForEach(FrameRate.allCases) { r in
+                Button(check(model.frameRate == r) + r.label) { model.frameRate = r }
             }
         }
 

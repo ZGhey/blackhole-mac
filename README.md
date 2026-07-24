@@ -41,6 +41,11 @@ Everything is in the menu-bar menu.
   the hole and watch it be eaten (below). **The default is the animation only
   and touches nothing**; moving files to the Trash is opt-in, and only ever
   applies to things that exist on disk.
+- **Frame rate** — 60, 30 or 15 fps. Not a quality dial; the geodesics are the
+  same either way. Measured at Medium, dropping 60 → 30 saved about a point of
+  CPU (10.3% → 9.2%) and a GPU difference too small to separate from the noise,
+  so reach for it at Large on a high-DPI display or on battery, not by default.
+  Low Power Mode caps it at 30 regardless.
 - **Swallow the pointer** — put the cursor inside and its image is dragged
   toward the middle, stretched and reddened until it goes out. The real pointer
   is never touched; move back out and the image catches up.
