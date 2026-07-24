@@ -28,11 +28,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let placeholder: MTLTexture
 
     private let queue: MTLCommandQueue
-    /// One per target format. The scene goes straight to the drawable when the
-    /// glow is off and into a half-float texture when it is on, and a pipeline
-    /// is only valid for the pixel format it was built against.
     private let pipeline: MTLRenderPipelineState
-    private let pipelineHDR: MTLRenderPipelineState
     private let sampler: MTLSamplerState
     private let bloom: BloomChain
 
@@ -63,28 +59,25 @@ final class Renderer: NSObject, MTKViewDelegate {
               let fs = library.makeFunction(name: "blackholeFragment")
         else { throw RendererError.missingFunctions }
 
-        func scenePipeline(_ format: MTLPixelFormat) throws -> MTLRenderPipelineState {
-            let desc = MTLRenderPipelineDescriptor()
-            desc.vertexFunction = vs
-            desc.fragmentFunction = fs
-            // Deliberately not an *_srgb format: the shader tonemaps and
-            // composites in the same raw-sRGB space the capture arrives in,
-            // which is what the Ghostty original got from the terminal for free.
-            desc.colorAttachments[0].pixelFormat = format
-            // The widget emits premultiplied alpha so the parts of the frame it
-            // does not touch stay see-through.
-            let a = desc.colorAttachments[0]!
-            a.isBlendingEnabled = true
-            a.rgbBlendOperation = .add
-            a.alphaBlendOperation = .add
-            a.sourceRGBBlendFactor = .one            // already premultiplied
-            a.sourceAlphaBlendFactor = .one
-            a.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            return try device.makeRenderPipelineState(descriptor: desc)
-        }
-        let pipeline = try scenePipeline(.bgra8Unorm)
-        let pipelineHDR = try scenePipeline(BloomChain.format)
+        let desc = MTLRenderPipelineDescriptor()
+        desc.vertexFunction = vs
+        desc.fragmentFunction = fs
+        // Deliberately not an *_srgb format: the shader tonemaps and composites
+        // in the same raw-sRGB space the capture arrives in, which is what the
+        // Ghostty original got from the terminal for free.
+        desc.colorAttachments[0].pixelFormat = BloomChain.format
+        desc.colorAttachments[1].pixelFormat = BloomChain.format
+        // The widget emits premultiplied alpha so the parts of the frame it
+        // does not touch stay see-through.
+        let a = desc.colorAttachments[0]!
+        a.isBlendingEnabled = true
+        a.rgbBlendOperation = .add
+        a.alphaBlendOperation = .add
+        a.sourceRGBBlendFactor = .one            // already premultiplied
+        a.sourceAlphaBlendFactor = .one
+        a.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        let pipeline = try device.makeRenderPipelineState(descriptor: desc)
 
         let sd = MTLSamplerDescriptor()
         sd.minFilter = .linear
@@ -100,7 +93,6 @@ final class Renderer: NSObject, MTKViewDelegate {
         self.device = device
         self.queue = queue
         self.pipeline = pipeline
-        self.pipelineHDR = pipelineHDR
         self.sampler = sampler
         self.params = params
         self.placeholder = PlaceholderTexture.make(device: device)
@@ -162,9 +154,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         // Flares and audio modulate how fast the disk turns, so the phase is
         // integrated here rather than derived from `time` in the shader — a
         // rate change applied to a large `time` would jump every streak at once.
-        let (flare, audio) = MainActor.assumeIsolated {
-            (Impacts.shared.level(),
-             ScreenCapture.shared.capturesAudio ? ScreenCapture.shared.audioLevel : 0)
+        let (flare, audio, hover) = MainActor.assumeIsolated {
+            () -> (Float, Float, Float) in
+            Proximity.shared.step(shadowRadius: Float(params.shadowRadiusFraction()))
+            return (Impacts.shared.level(),
+                    ScreenCapture.shared.capturesAudio ? ScreenCapture.shared.audioLevel : 0,
+                    Proximity.shared.hover)
         }
         let rate = Float(abs(params["DISK_SPEED"]) * params["DISK_RATE"])
         diskPhase += Float(dt) * rate * (1 + 1.2 * flare + 0.5 * audio)
@@ -185,9 +180,11 @@ final class Renderer: NSObject, MTKViewDelegate {
 
         let w = Float(view.drawableSize.width), h = Float(view.drawableSize.height)
         let strength = Float(params["BLOOM"])
-        // The glow costs four extra passes; skip them outright when it is off
-        // rather than blurring a texture nobody will read.
-        let wantsBloom = strength > 0.001 && bloom.resize(width: Int(w), height: Int(h))
+        // The scene always lands in the offscreen pair — colour in one target,
+        // the disk's own light in the other — because bloom has to key on
+        // emission alone. Only the blur passes are conditional.
+        guard bloom.resize(width: Int(w), height: Int(h)) else { return }
+        let wantsBloom = strength > 0.001
 
         // Live screen content is not a loaded texture — it arrives per frame,
         // already cropped to the widget where the OS supports it. This has to
@@ -211,26 +208,73 @@ final class Renderer: NSObject, MTKViewDelegate {
             }
         }
 
-        guard let sceneTarget = wantsBloom ? bloom.scenePass() : pass,
+        guard let sceneTarget = bloom.scenePass(),
               let encoder = buffer.makeRenderCommandEncoder(descriptor: sceneTarget)
         else { return }
+
+        // One slot on the sky plane, two things that can occupy it: a dropped
+        // file, or the pointer's own image. A drop wins — it is a deliberate
+        // act, and it finishes in a couple of seconds.
+        let (fallCentre, fallSize, fallAlpha, fallTear, fallTexture) = MainActor.assumeIsolated {
+            () -> (SIMD2<Float>, Float, Float, Float, MTLTexture?) in
+            if Faller.shared.step(shadowRadius: Float(params.shadowRadiusFraction())) {
+                Impacts.shared.strike()
+            }
+            if Faller.shared.takeDelivery() {
+                // The stream reached the disk. Where round it, in the disk's own
+                // azimuth: a screen direction maps onto the plane through the
+                // inclination, since the disk is a circle seen edge-on-ish and
+                // its vertical extent is foreshortened by cos(incl).
+                let c = Faller.shared.centre - SIMD2<Float>(0.5, 0.5)
+                let roll = Float(params["DISK_ROLL"])
+                let sx = c.x * cos(roll) - (-c.y) * sin(roll)
+                let sy = c.x * sin(roll) + (-c.y) * cos(roll)
+                let ci = max(cos(Float(params["DISK_INCL"])), 0.05)
+                let alpha = atan2(sy, sx)
+                Impacts.shared.deliver(angle: atan2(sin(alpha), cos(alpha) * ci),
+                                       colour: Faller.shared.colour)
+            }
+            if let dropped = Faller.shared.texture, Faller.shared.alpha > 0.01 {
+                return (Faller.shared.centre, Faller.shared.size, Faller.shared.alpha,
+                        Faller.shared.tear, dropped)
+            }
+            if let ghost = Proximity.shared.ghostTexture {
+                return (Proximity.shared.ghost, Proximity.shared.ghostSize,
+                        Proximity.shared.ghostAlpha, Proximity.shared.ghostTear, ghost)
+            }
+            return (SIMD2<Float>(0.5, 0.5), 0, 0, 0, nil)
+        }
 
         var u = params.uniforms(time: time, diskPhase: diskPhase,
                                 width: max(w, 1), height: max(h, 1),
                                 bgFit: fit, skyAlpha: hasSky ? 1 : 0,
                                 flare: flare, audio: audio, drift: drift)
+        // The sources work relative to the widget's centre; the hole is off
+        // there by the drift, and the overlay is polar around the hole.
+        let aspect = max(w, 1) / max(h, 1)
+        u.fallX = (fallCentre.x - 0.5 - drift.x) * aspect
+        u.fallY = (fallCentre.y - 0.5 - drift.y)
+        u.fallSize = fallSize
+        u.fallAlpha = fallAlpha
+        u.hover = hover
+        u.fallTear = fallTear
+        let fed = MainActor.assumeIsolated { Impacts.shared.feed() }
+        u.feedAngle = fed.angle
+        u.feedStrength = fed.strength
+        u.feedR = fed.colour.x
+        u.feedG = fed.colour.y
+        u.feedB = fed.colour.z
 
-        encoder.setRenderPipelineState(wantsBloom ? pipelineHDR : pipeline)
+        encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
         encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentTexture(fallTexture ?? placeholder, index: 1)
         encoder.setFragmentSamplerState(sampler, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
 
-        if wantsBloom {
-            bloom.run(in: buffer, finalPass: pass,
-                      threshold: Float(params["BLOOM_THRESHOLD"]), strength: strength)
-        }
+        bloom.run(in: buffer, finalPass: pass, blur: wantsBloom,
+                  threshold: Float(params["BLOOM_THRESHOLD"]), strength: strength)
 
         buffer.present(drawable)
         buffer.commit()
@@ -255,11 +299,12 @@ final class BloomChain {
 
     private let device: MTLDevice
     private let bright: MTLRenderPipelineState
-    private let blur: MTLRenderPipelineState
+    private let blurState: MTLRenderPipelineState
     private let composite: MTLRenderPipelineState
     private let sampler: MTLSamplerState
 
     private var scene: MTLTexture?
+    private var emission: MTLTexture?
     private var ping: MTLTexture?
     private var pong: MTLTexture?
     private var size = (w: 0, h: 0)
@@ -286,7 +331,7 @@ final class BloomChain {
             return try device.makeRenderPipelineState(descriptor: d)
         }
         bright = try pipeline("bloomBright", blending: false)
-        blur = try pipeline("bloomBlur", blending: false)
+        blurState = try pipeline("bloomBlur", blending: false)
         composite = try pipeline("bloomComposite", blending: true)
 
         let sd = MTLSamplerDescriptor()
@@ -313,26 +358,29 @@ final class BloomChain {
             return device.makeTexture(descriptor: d)
         }
         guard let s = make(width, height),
+              let e = make(width, height),
               let a = make(width / 4, height / 4),
               let b = make(width / 4, height / 4) else { return false }
-        scene = s; ping = a; pong = b
+        scene = s; emission = e; ping = a; pong = b
         size = (width, height)
         return true
     }
 
     func scenePass() -> MTLRenderPassDescriptor? {
-        guard let scene else { return nil }
+        guard let scene, let emission else { return nil }
         let d = MTLRenderPassDescriptor()
-        d.colorAttachments[0].texture = scene
-        d.colorAttachments[0].loadAction = .clear
-        d.colorAttachments[0].storeAction = .store
-        d.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+        for (i, t) in [scene, emission].enumerated() {
+            d.colorAttachments[i].texture = t
+            d.colorAttachments[i].loadAction = .clear
+            d.colorAttachments[i].storeAction = .store
+            d.colorAttachments[i].clearColor = MTLClearColorMake(0, 0, 0, 0)
+        }
         return d
     }
 
     func run(in buffer: MTLCommandBuffer, finalPass: MTLRenderPassDescriptor,
-             threshold: Float, strength: Float) {
-        guard let scene, let ping, let pong else { return }
+             blur: Bool, threshold: Float, strength: Float) {
+        guard let scene, let emission, let ping, let pong else { return }
 
         func pass(_ target: MTLTexture?, _ descriptor: MTLRenderPassDescriptor?,
                   _ state: MTLRenderPipelineState, _ textures: [MTLTexture],
@@ -362,14 +410,17 @@ final class BloomChain {
 
         var u = Uniforms(threshold: threshold, strength: strength,
                          texelX: small.x, texelY: small.y)
-        pass(ping, nil, bright, [scene], u)
+        if blur {
+            // Emission only. Handing this the composed scene is what made a
+            // pale wallpaper glow.
+            pass(ping, nil, bright, [emission], u)
+            u.dirX = 1; u.dirY = 0
+            pass(pong, nil, blurState, [ping], u)
+            u.dirX = 0; u.dirY = 1
+            pass(ping, nil, blurState, [pong], u)
+        }
 
-        u.dirX = 1; u.dirY = 0
-        pass(pong, nil, blur, [ping], u)
-        u.dirX = 0; u.dirY = 1
-        pass(ping, nil, blur, [pong], u)
-
-        u = Uniforms(threshold: threshold, strength: strength,
+        u = Uniforms(threshold: threshold, strength: blur ? strength : 0,
                      texelX: full.x, texelY: full.y)
         pass(nil, finalPass, composite, [scene, ping], u)
     }

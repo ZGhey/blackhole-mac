@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             if let device = MTLCreateSystemDefaultDevice() {
                 ScreenCapture.shared.configure(device: device)
+                Faller.shared.configure(device: device)
+                Proximity.shared.configure(device: device)
             }
             ScreenCapture.shared.capturesAudio = Shared.model.audioReactive
                 && Shared.model.lens == .screen
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Shared.model.onSizeChange = { Shared.widget.sizeChanged() }
             Shared.model.onHiddenChange = { Shared.widget.hiddenChanged() }
             HotKey.install { Shared.model.hidden.toggle() }
+            Proximity.shared.setEnabled(Shared.model.noticesPointer)
             Shared.widget.isEnabled = true
         }
     }
@@ -105,6 +108,13 @@ final class AppModel: ObservableObject {
     }
     @Published var swallowAction: SwallowAction {
         didSet { UserDefaults.standard.set(swallowAction.rawValue, forKey: "swallowAction") }
+    }
+    /// Swallow the pointer's image when it wanders in.
+    @Published var noticesPointer: Bool {
+        didSet {
+            UserDefaults.standard.set(noticesPointer, forKey: "noticesPointer")
+            Proximity.shared.setEnabled(noticesPointer)
+        }
     }
     /// Pulse the disk with system audio. Rides the screen-capture stream, so it
     /// needs the live-screen lens — there is no stream to listen through
@@ -173,6 +183,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = LoginItem.isEnabled
         position = PanelPosition(rawValue: d.string(forKey: "position") ?? "") ?? .free
         swallowAction = SwallowAction(rawValue: d.string(forKey: "swallowAction") ?? "") ?? .animateOnly
+        noticesPointer = d.object(forKey: "noticesPointer") as? Bool ?? true
         if let main = NSScreen.main?.displayID,
            let p = d.dictionary(forKey: "origin-\(main)") as? [String: Double],
            let x = p["x"], let y = p["y"] {
@@ -254,6 +265,10 @@ struct MenuContent: View {
                 Button("Snap to left") { Shared.widget.snapToEdge(.minX) }
                 Button("Snap to right") { Shared.widget.snapToEdge(.maxX) }
             }
+        }
+
+        Button(check(model.noticesPointer) + "Swallow the pointer") {
+            model.noticesPointer.toggle()
         }
 
         Menu("Dropped files") {

@@ -75,8 +75,33 @@ struct Uniforms {
     /// Extra brightness for higher-order disk images — the photon ring.
     var ringGain: Float = 0
 
+    /// Whatever is being swallowed: its offset from the hole's centre in
+    /// aspect-corrected screen units, how wide it is, and how much is left.
+    /// Drawn in front of the hole — light from something falling in on the
+    /// viewer's side reaches the eye directly, so what happens to it is tidal
+    /// rather than optical.
+    var fallX: Float = 0
+    var fallY: Float = 0
+    var fallSize: Float = 0
+    var fallAlpha: Float = 0
+
+    /// How close the pointer is, 0…1. The disk brightens a little and the hole
+    /// leans toward it — the attraction runs from the hole to the pointer, not
+    /// the other way, because nothing here is allowed to move the cursor.
+    var hover: Float = 0
+    /// How far the tide has sheared whatever is falling in. Drives the
+    /// Keplerian lead that draws it into a stream and the seams it comes apart
+    /// along.
+    var fallTear: Float = 0
+
+    /// Where round the disk the debris was delivered, how strongly it is still
+    /// glowing, and what colour it used to be. The swallowed thing does not
+    /// vanish — it circularises and becomes disk, which is why a real tidal
+    /// disruption is a flare that lasts rather than an event that ends.
+    var feedAngle: Float = 0
+    var feedStrength: Float = 0
+    var feedR: Float = 1
+    var feedG: Float = 1
+    var feedB: Float = 1
     var pad0: Float = 0
-    var pad1: Float = 0
-    var pad2: Float = 0
-    var pad3: Float = 0
 }

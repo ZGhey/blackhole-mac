@@ -36,7 +36,9 @@ struct Uniforms {
     float bgScaleX, bgScaleY, bgOffX, bgOffY;
     float skyAlpha, audio, spotGain, spotRadius;
     float driftX, driftY, lensBoost, ringGain;
-    float pad0, pad1, pad2, pad3;
+    float fallX, fallY, fallSize, fallAlpha;
+    float hover, fallTear, feedAngle, feedStrength;
+    float feedR, feedG, feedB, pad0;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -158,7 +160,12 @@ static inline float3 tonemap(float3 c, float exposure) {
     if (peak <= 1e-5f) return float3(0.0f);
     float mapped = 1.0f - exp(-peak);
     float3 ratio = x / peak;
-    ratio = mix(ratio, float3(1.0f), smoothstep(1.2f, 7.0f, peak) * 0.85f);
+    // The bleach used to start at peak 1.2, which the shipped styles clear
+    // immediately — so the disk went white almost everywhere and only the
+    // outermost filaments kept any colour at all. Genuinely extreme light
+    // should still wash out, but "genuinely extreme" is an order of magnitude
+    // further along than that, and it never goes all the way.
+    ratio = mix(ratio, float3(1.0f), smoothstep(3.0f, 20.0f, peak) * 0.65f);
     return ratio * mapped;
 }
 
@@ -188,9 +195,113 @@ static inline float3 skySampleGrad(texture2d<float> bg, sampler smp,
     return bg.sample(smp, t, gradient2d(gx, gy)).rgb * U.bgDim;
 }
 
+// Whatever is currently falling in, painted onto the sky plane so the tracer
+// bends it like everything else.
+//
+// The obvious way to animate a dropped file is a layer on top of the render:
+// spiral it inward, shrink it, fade it. That reads as an icon animating over a
+// picture of a black hole, because it is — nothing about it is lensed. Put the
+// same sprite *into* the sky the geodesics are sampling and the physics does
+// the work instead: it stretches along the shear, smears into an arc, throws a
+// second image near the photon ring, and is genuinely gone once its light can
+// no longer escape.
+//
+// The redshift comes free: the sprite's distance from the centre is known here,
+// so the same 1/√(1 − r_h/r) that reddens everything else reddens it too.
+/// Whatever is currently falling in, drawn *in front of* the hole.
+///
+/// It was on the sky plane at first, which was wrong twice over. Practically,
+/// the disk is opaque, so the object spent its whole descent hidden behind it
+/// and the tearing was invisible. Physically, something falling in on the
+/// viewer's side sends its light straight to the eye — there is nothing between
+/// them to bend it. What happens to it is tidal, not optical.
+///
+/// And tidal is the whole point. The near side is pulled harder than the far
+/// side (the force goes as 1/r³) and orbits faster (Kepler), so a solid body is
+/// sheared into a stream well before it arrives, comes apart along seams, and
+/// is swallowed piece by piece rather than all at once. That has a name — a
+/// tidal disruption event — and the debris crossing in the order it reaches the
+/// horizon is exactly what makes it read as being eaten rather than deleted.
+///
+/// Returned premultiplied: rgb already scaled by a.
+static inline float4 fallerOverlay(texture2d<float> faller, sampler smp,
+                                   constant Uniforms &U, float2 p, float rh) {
+    if (U.fallAlpha <= 0.002f) return float4(0.0f);
+
+    // Polar around the hole, because the shear is a function of radius.
+    float2 c = float2(U.fallX, U.fallY);
+    float r0 = max(length(c), 1e-4f);
+    float rr = max(length(p), 1e-5f);
+    float a0 = atan2(c.y, c.x);
+    float th = atan2(p.y, p.x);
+
+    // A pure function of radius inverts exactly: given a point on screen,
+    // un-shear it to find which part of the object was there. No particles.
+    float lead = U.fallTear * (pow(r0 / rr, 1.5f) - 1.0f);
+    float dth = th - a0 - lead;
+    dth = atan2(sin(dth), cos(dth));            // wrap to [-pi, pi]
+
+    float halfSize = max(U.fallSize, 1e-4f) * 0.5f;   // `half` is a type in MSL
+    // Debris does not stay at one radius. The pieces come away with a spread of
+    // orbital energies, the innermost bound most tightly, so the stream draws
+    // out radially as well as around — and the fragments reach the horizon one
+    // after another rather than the whole body arriving at once. Without this
+    // they sit in the same narrow annulus and go in together, which is what
+    // made it read as a block rather than a stream.
+    // Debris does not stay at one radius, but it does not fly outward either:
+    // the pieces that come away with less orbital energy fall *inward*, so the
+    // stream is drawn toward the hole while its trailing edge stays roughly put.
+    // Spreading both ways turned it into a fan opening away from the hole,
+    // which is the opposite of being eaten.
+    float sv = (rr - r0) / halfSize;             // across the stream
+    if (sv < 0.0f) sv /= (1.0f + 2.2f * U.fallTear);
+    float su = dth * r0 / halfSize;              // along it
+    if (fabs(sv) > 1.0f || fabs(su) > 1.0f) return float4(0.0f);
+
+    float2 s = float2(su, sv) * 0.5f + 0.5f;
+    float4 sprite = faller.sample(smp, float2(s.x, 1.0f - s.y));
+    if (sprite.a <= 0.004f) return float4(0.0f);
+
+    // Cracks, not a dissolve: the eye reads gaps as breakage and a fade as fog.
+    // The seams have to open completely — a half-transparent gap just looks
+    // like the whole thing is fading, which is the effect this exists to avoid.
+    // Narrow seams, and more of them as it goes: a body does not shatter once,
+    // it keeps dividing while the tide keeps winning — block, then grit, then
+    // dust. Wide gaps would scatter it into confetti, and the point is that this
+    // is a thing coming apart, not a thing dissolving.
+    float chunks = 4.0f + 7.0f * clamp(U.fallTear, 0.0f, 1.1f);
+    float2 cell = fract(s * chunks);
+    float seam = min(min(cell.x, 1.0f - cell.x), min(cell.y, 1.0f - cell.y));
+    float crack = smoothstep(0.03f, 0.11f, seam);
+    float torn = mix(1.0f, crack, clamp(U.fallTear * 2.2f, 0.0f, 1.0f));
+
+    // Redshift from *this* sample's radius, not the object's centre, so the
+    // leading edge reddens, dims and goes out first.
+    float escape = max(1.0f - rh / max(rr, rh * 1.005f), 0.0f);
+    float3 tint = mix(float3(1.0f, 0.16f, 0.05f), float3(1.0f), sqrt(escape));
+    // Redshift dims it, but not so fast that the disruption happens in the
+    // dark — the fragments should still be legible while they come apart.
+    float a = clamp(sprite.a * U.fallAlpha * torn * pow(escape, 0.22f), 0.0f, 1.0f);
+    return float4(sprite.rgb * tint * a, a);
+}
+
 // ------------------------------------------------------------------ vertex --
 struct VSOut {
     float4 pos [[position]];
+};
+
+/// The scene writes two targets: what you see, and — separately — only the
+/// light the disk emitted.
+///
+/// Bloom has to key on the second. Keying on the first means the *lensed
+/// wallpaper* blooms, and over anything pale that is most of the frame: a
+/// light sky sits around 0.8, sails past any sensible threshold, and buries the
+/// widget in a white halo that has nothing to do with the black hole. The
+/// background is a copy of your screen and is already exposed correctly. Only
+/// emission should glow.
+struct SceneOut {
+    float4 color [[color(0)]];
+    float4 emission [[color(1)]];
 };
 
 // One oversized triangle covering the clip cube — no vertex buffer needed.
@@ -202,10 +313,18 @@ vertex VSOut blackholeVertex(uint vid [[vertex_id]]) {
 }
 
 // ---------------------------------------------------------------- fragment --
-fragment float4 blackholeFragment(VSOut in [[stage_in]],
-                                  constant Uniforms &U [[buffer(0)]],
-                                  texture2d<float> bg [[texture(0)]],
-                                  sampler smp [[sampler(0)]]) {
+static inline SceneOut sceneOut(float4 color, float3 emission) {
+    SceneOut o;
+    o.color = color;
+    o.emission = float4(emission, 1.0f);
+    return o;
+}
+
+fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
+                                    constant Uniforms &U [[buffer(0)]],
+                                    texture2d<float> bg [[texture(0)]],
+                                    texture2d<float> faller [[texture(1)]],
+                                    sampler smp [[sampler(0)]]) {
     float2 res   = float2(U.resX, U.resY);
     float2 uv    = in.pos.xy / res;
     float aspect = res.x / res.y;
@@ -247,8 +366,10 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
     // from temperature instead: hotter gas shifts the blackbody toward blue-
     // white, which reads as "that just got violent" while the structure
     // survives. Audio nudges the same two dials, so the two compose.
-    float gainBoost = 1.0f + 0.55f * U.flare + 0.30f * U.audio;
-    float tempBoost = 1.0f + 0.85f * U.flare + 0.10f * U.audio;
+    // hover: the pointer is near. Small and sustained, where a flare is large
+    // and brief — it should read as the hole noticing you, not reacting.
+    float gainBoost = 1.0f + 0.55f * U.flare + 0.30f * U.audio + 0.30f * U.hover;
+    float tempBoost = 1.0f + 0.85f * U.flare + 0.10f * U.audio + 0.14f * U.hover;
 
     // aspect-corrected frame centred on the hole (y in units of widget height)
     float2 p   = (uv - center) * float2(aspect, 1.0f);
@@ -280,6 +401,10 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
     float silhouette = 1.0f - smoothstep(PANEL_FADE_START, 1.0f, rNorm);
     window *= silhouette;
 
+    // In front of everything, so it is computed before any early-out can
+    // discard the pixel and applied at every exit.
+    float4 fall = fallerOverlay(faller, smp, U, p, rh);
+
     float bmax = rout + 3.0f;             // rays beyond this can't touch the disk
     float Z0   = max(14.0f, rout + 5.0f); // camera distance (shared with the tracer)
 
@@ -296,7 +421,10 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
         // of a pixel: hand the frame back untouched. On a widget-sized panel
         // that is most of the corners, and it saves three texture samples plus
         // the deflection math each.
-        if (window < 0.001f) return float4(0.0f);
+        if (window < 0.001f) {
+            return sceneOut(composite(fall.a > 0.0f ? fall.rgb / fall.a : float3(0.0f), fall.a),
+                            float3(0.0f));
+        }
 
         float u    = Z0 * rsqrt(Z0 * Z0 + b * b);
         float defl = (2.0f / (W * W)) / max(plen, 1e-4f)
@@ -324,7 +452,8 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
         float3 st = stars(d, U.time, U.starGain) * window;
         float aFar = max(U.skyAlpha * silhouette,
                          clamp(max(st.r, max(st.g, st.b)), 0.0f, 1.0f));
-        return composite(term + st, aFar);
+        float3 far = (term + st) * (1.0f - fall.a) + fall.rgb;
+        return sceneOut(composite(far, max(aFar, fall.a)), st);
     }
 
     // ====================== near field: trace the geodesic ==================
@@ -443,11 +572,28 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
                 float tprof = pow(rin / rc, 0.75f) * pow(xpr, 0.25f) / 0.488f;
                 // The spot is denser *and* hotter, which is what separates it
                 // from the surrounding gas by colour as well as brightness.
-                float3 cbb  = blackbody(U.diskTemp * tempBoost * (1.0f + 0.45f * spot) * tprof * gg);
+                // What was swallowed does not simply vanish: the debris
+                // circularises and *becomes* disk. This is the arc it was
+                // delivered into — hotter, brighter, and briefly carrying the
+                // colour of whatever it used to be. It shears round the disk as
+                // it settles, so the patch spreads from a bright bruise into a
+                // ring and fades. A real tidal disruption flare is months of
+                // exactly this; here it is a few seconds.
+                float feed = 0.0f;
+                if (U.feedStrength > 0.001f) {
+                    float dphi = phi - U.feedAngle;
+                    dphi = atan2(sin(dphi), cos(dphi));
+                    float width = mix(2.9f, 0.40f, clamp(U.feedStrength, 0.0f, 1.0f));
+                    feed = U.feedStrength * exp(-dphi * dphi / (width * width));
+                }
+                float3 cbb  = blackbody(U.diskTemp * tempBoost * (1.0f + 0.45f * spot)
+                                        * (1.0f + 0.5f * feed) * tprof * gg);
+                cbb = mix(cbb, float3(U.feedR, U.feedG, U.feedB), clamp(feed * 0.45f, 0.0f, 1.0f));
                 float boost = pow(gg, U.diskBeam);                 // relativistic beaming
 
                 float density = band * streaks * (1.0f + spot);
-                emitc += trans * cbb * (U.diskGain * gainBoost * ring * 2.2f * density * tprof * tprof * boost);
+                emitc += trans * cbb * (U.diskGain * gainBoost * (1.0f + 2.4f * feed)
+                                        * ring * 2.2f * density * tprof * tprof * boost);
                 trans *= 1.0f - clamp(U.diskOpacity * density, 0.0f, 1.0f);
             }
         }
@@ -488,13 +634,21 @@ fragment float4 blackholeFragment(VSOut in [[stage_in]],
 
     // disk light is HDR; tonemap it on top of the (untouched) background sample
     float3 glow = tonemap(emitc, U.exposure);
-    float3 col  = bgc * trans + glow;
+    float3 base = bgc * trans;
+    // Screen, not add. Adding emission to a copy of a bright screen clips the
+    // sum flat white and takes the disk's structure with it — over a pale
+    // wallpaper the whole widget went to paper. Screen blending is the same
+    // thing on a dark background and cannot exceed 1 on a light one, so the
+    // disk stays legible over anything.
+    float3 col = 1.0f - (1.0f - clamp(base, 0.0f, 1.0f)) * (1.0f - clamp(glow, 0.0f, 1.0f));
     // The shadow is opaque even with nothing behind it — a hole that swallowed
     // your windows should read as a hole, not as a gap in the widget.
     float alpha = silhouette * max(U.skyAlpha,
                                    max(clamp(max(glow.r, max(glow.g, glow.b)), 0.0f, 1.0f),
                                        captured ? 1.0f : 0.0f));
-    return composite(col, alpha);
+    // Over the top of everything — the hole included.
+    col = col * (1.0f - fall.a) + fall.rgb;
+    return sceneOut(composite(col, max(alpha, fall.a)), glow * silhouette);
 }
 
 // ------------------------------------------------------------------- bloom --
@@ -513,6 +667,7 @@ struct BloomUniforms {
 
 /// Isolate what is bright enough to spill, at quarter resolution — the blur
 /// that follows is wide and soft, so full resolution would be wasted work.
+/// Fed the emission target, never the composed scene: see SceneOut.
 fragment float4 bloomBright(VSOut in [[stage_in]],
                             constant BloomUniforms &B [[buffer(0)]],
                             texture2d<float> src [[texture(0)]],
@@ -564,6 +719,10 @@ fragment float4 bloomComposite(VSOut in [[stage_in]],
     float3 g = bloom.sample(smp, uv).rgb * B.strength;
     float ga = clamp(max(g.r, max(g.g, g.b)), 0.0f, 1.0f);
     float a = clamp(s.a + ga * (1.0f - s.a), 0.0f, 1.0f);
-    // Premultiplied colour can never exceed its own alpha.
-    return float4(min(s.rgb + g, float3(a)), a);
+    // Screen, not add. Adding drives whichever channel is already highest to 1
+    // first and the rest after it, turning a bright amber disk white from the
+    // inside out — the same clipping the tonemap just went to some trouble to
+    // avoid. Premultiplied colour can never exceed its own alpha.
+    float3 lit = 1.0f - (1.0f - clamp(s.rgb, 0.0f, 1.0f)) * (1.0f - clamp(g, 0.0f, 1.0f));
+    return float4(min(lit, float3(a)), a);
 }

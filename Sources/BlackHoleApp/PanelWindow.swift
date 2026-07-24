@@ -341,6 +341,8 @@ final class PanelController {
         let frame = panel.frame
         let radius = frame.height * Self.silhouetteRadius(params)
         let centre = CGPoint(x: frame.midX, y: frame.midY)
+        Proximity.shared.centre = centre
+        Proximity.shared.radius = radius
         let mouse = NSEvent.mouseLocation
         let inside = hypot(mouse.x - centre.x, mouse.y - centre.y) <= radius
         panel.ignoresMouseEvents = !(inside || busy)
@@ -435,122 +437,22 @@ final class PanelContentView: NSView {
         return true
     }
 
-    /// The infall, as a distant observer actually sees it.
-    ///
-    /// Three things happen to something falling into a black hole, and the
-    /// obvious animation — shrink, fade, done — shows none of them:
-    ///
-    ///   * **It never arrives.** Coordinate time diverges at the horizon, so
-    ///     the radius approaches it exponentially and the image freezes just
-    ///     outside, dimming, rather than touching it.
-    ///   * **It reddens.** Light climbing back out loses energy:
-    ///     1 + z = 1/√(1 − r_h/r), which runs away at the horizon. The
-    ///     brightness goes with it, which is why the frozen image fades.
-    ///   * **It stretches.** Tidal force goes as 1/r³, pulling the near side
-    ///     harder than the far side, so it is drawn out along the radius.
-    ///
-    /// All three are cheap here — it is a CALayer, not part of the geodesic
-    /// field — and together they turn a dropped file into something that
-    /// visibly obeys the same physics the shader is integrating.
+    /// Hand it to the shader, which paints it onto the sky plane where the
+    /// geodesics can bend it. The animation that used to live here — a layer
+    /// spiralling in over the render — could not be lensed, which is exactly
+    /// why it read as an icon animating over a picture of a black hole.
     private func swallow(_ morsel: Morsel, from start: NSPoint, delay: TimeInterval) {
-        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        let horizon = max((Shared.params.shadowRadiusFraction()) * Double(bounds.height), 6)
-        let r0 = max(hypot(start.x - centre.x, start.y - centre.y), horizon * 1.6)
-        let a0 = atan2(start.y - centre.y, start.x - centre.x)
-        let side: CGFloat = 64
-
-        let steps = 90
-        var positions: [CGPoint] = []
-        var transforms: [NSValue] = []
-        var opacities: [NSNumber] = []
-        var redshifts: [NSNumber] = []
-
-        for i in 0...steps {
-            let u = Double(i) / Double(steps)
-            // r → r_h exponentially in coordinate time: it gets arbitrarily
-            // close and never lands.
-            let r = horizon * 1.02 + (r0 - horizon * 1.02) * exp(-4.5 * u)
-            // The winding freezes with everything else.
-            let phi = a0 + 2.6 * 2 * .pi * (1 - exp(-2.6 * u))
-            positions.append(CGPoint(x: centre.x + r * cos(phi), y: centre.y + r * sin(phi)))
-
-            let escape = max(1 - horizon / r, 0.015)      // 1/(1+z)²
-            redshifts.append(NSNumber(value: min((1 / escape.squareRoot() - 1) / 2.2, 1)))
-            // Surface brightness falls off with the redshift; the frozen image
-            // is not still there forever, it is just too faint to see.
-            opacities.append(NSNumber(value: pow(escape, 1.4)))
-
-            // Tidal stretch ~ 1/r³, radial long axis. Rotate the radius onto x,
-            // scale, rotate back.
-            let tide = min(1 + 2.6 * pow(horizon / r, 3), 7)
-            let shrink = horizon / r0            // it also just gets further away
-            let long = max(tide * shrink, 0.02)
-            let short = max(shrink / tide.squareRoot(), 0.02)
-            var m = CATransform3DMakeRotation(phi, 0, 0, 1)
-            m = CATransform3DScale(m, long, short, 1)
-            m = CATransform3DRotate(m, -phi, 0, 0, 1)
-            transforms.append(NSValue(caTransform3D: m))
-        }
-
-        let container = CALayer()
-        container.frame = CGRect(x: positions[0].x - side / 2, y: positions[0].y - side / 2,
-                                 width: side, height: side)
-        let plain = CALayer()
-        plain.frame = CGRect(origin: .zero, size: CGSize(width: side, height: side))
-        plain.contents = morsel.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        plain.contentsGravity = .resizeAspect
-        let reddened = CALayer()
-        reddened.frame = plain.frame
-        reddened.contents = Morsel.redshifted(morsel.image)
-            .cgImage(forProposedRect: nil, context: nil, hints: nil)
-        reddened.contentsGravity = .resizeAspect
-        reddened.opacity = 0
-        container.addSublayer(plain)
-        container.addSublayer(reddened)
-        layer?.addSublayer(container)
-
-        let duration: CFTimeInterval = 2.2
-        let begin = CACurrentMediaTime() + delay
-
-        func keyframes(_ path: String, _ values: [Any]) -> CAKeyframeAnimation {
-            let anim = CAKeyframeAnimation(keyPath: path)
-            anim.values = values
-            anim.calculationMode = .linear
-            return anim
-        }
-
-        let group = CAAnimationGroup()
-        group.animations = [
-            keyframes("position", positions.map { NSValue(point: $0) }),
-            keyframes("transform", transforms),
-            keyframes("opacity", opacities),
-        ]
-        group.duration = duration
-        group.beginTime = begin
-        group.fillMode = .backwards
-        group.isRemovedOnCompletion = false
-        container.opacity = 0
-        container.add(group, forKey: "infall")
-
-        let redFade = keyframes("opacity", redshifts)
-        redFade.duration = duration
-        redFade.beginTime = begin
-        redFade.fillMode = .backwards
-        redFade.isRemovedOnCompletion = false
-        reddened.add(redFade, forKey: "redshift")
-
-        // The flare fires as it reaches the horizon, not when it was dropped —
-        // the energy is released on the way in.
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay + duration * 0.82) {
-            Impacts.shared.strike()
-        }
-
+        let uv = SIMD2<Float>(Float(start.x / max(bounds.width, 1)),
+                              Float(1 - start.y / max(bounds.height, 1)))
+        let image = morsel.image
         let action = model?.swallowAction ?? .animateOnly
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay + duration) {
-            container.removeFromSuperlayer()
-            // The destructive step happens only after the animation completes,
-            // only when explicitly enabled, and only for things that exist on
-            // disk — the default eats nothing.
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            Faller.shared.swallow(image, from: uv)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + Faller.duration) {
+            // The destructive step happens only after it is gone, only when
+            // explicitly enabled, and only for things that exist on disk — the
+            // default eats nothing.
             if action == .moveToTrash, case .file(let url) = morsel.kind {
                 NSWorkspace.shared.recycle([url])
             }

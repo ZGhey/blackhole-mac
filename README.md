@@ -38,12 +38,12 @@ Everything is in the menu-bar menu.
   (Accessibility permission). Follow-cursor is decoration only: it sits under
   the pointer, so it stays click-through and cannot take drops.
 - **Dropped things** — drop a file, a selection of text, a link or an image on
-  the hole and it falls in the way a distant observer would actually see it
-  (below). As it reaches the horizon the **disk flares** and the lensing
-  deepens: infalling matter really does light a disk up, and the hole really is
-  heavier afterwards. **The default is the animation only and touches
-  nothing**; moving files to the Trash is opt-in, and only ever applies to
-  things that exist on disk.
+  the hole and watch it be eaten (below). **The default is the animation only
+  and touches nothing**; moving files to the Trash is opt-in, and only ever
+  applies to things that exist on disk.
+- **Swallow the pointer** — put the cursor inside and its image is dragged
+  toward the middle, stretched and reddened until it goes out. The real pointer
+  is never touched; move back out and the image catches up.
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
   so it does nothing under `swift run`.
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
@@ -149,20 +149,42 @@ infrared flares — GRAVITY watched the centroid of one go round — and this on
 lensed like everything else, so its far-side image arcs over the shadow half an
 orbit out of step with itself.
 
-## The infall
+## Being eaten
 
-Three things happen to something falling into a black hole, and shrink-and-fade
-shows none of them:
+A dropped file does not simply shrink and fade. Five things happen to it, and
+each one is something that happens to real matter falling into a real hole.
 
-- **It never arrives.** Coordinate time diverges at the horizon, so the radius
-  approaches it exponentially and the image freezes just outside.
-- **It reddens.** 1 + z = 1/√(1 − r_h/r) runs away at the horizon, and the
-  brightness goes with it — the frozen image is not still hanging there, it is
-  too faint to see.
-- **It stretches.** Tidal force goes as 1/r³, so it is drawn out along the
-  radius.
+**It approaches**, on a decaying spiral, already visibly distorted.
 
-All three are cheap: it is a CALayer, not part of the geodesic field.
+**It is torn apart.** Not by an explosion — by tides. The near side is pulled
+harder than the far side (the force goes as 1/r³) and orbits faster (Kepler), so
+a solid body is *sheared* into a stream. That is a tidal disruption, and it is
+why the debris is swallowed piece by piece rather than all at once. The shear is
+a pure function of radius, so it inverts exactly: given a point on screen, the
+shader un-shears it to find which part of the object was there. No particles.
+
+**It keeps dividing.** Block, then grit, then dust — a body does not shatter
+once and stop while the tide is still winning.
+
+**It joins the disk.** This is the part worth arguing for. Debris does not fall
+straight in; it circularises, and the disk eats it afterwards. So the arc it was
+delivered into brightens, heats, and briefly carries the colour of whatever the
+thing used to be.
+
+**The disk stays fed.** The bright patch shears round as it settles, spreading
+from a bruise into a ring, and decays over about ten seconds. A real tidal
+disruption flare runs for months; this is the same shape at a watchable rate.
+
+Two consequences worth having. Dropping a file now leaves something behind for
+ten seconds instead of nothing after two — drop a handful and you can see the
+thing being fed. And it answers a question nobody thinks to ask but everybody
+understands on sight: where the disk came from.
+
+The object is drawn **in front of** the hole, not on the sky plane behind it.
+It was behind at first, which was wrong twice over: the disk is opaque, so the
+whole descent happened out of sight, and light from something falling in on the
+viewer's side reaches the eye directly — there is nothing in between to bend it.
+What happens to it is tidal, not optical.
 
 ## Why the disk's rotation is a phase, not a speed
 
@@ -194,6 +216,21 @@ extra disk crossing is one more turn. They are the sharpest structure in the
 picture and also the faintest, because the near disk absorbed them the whole
 way, so `RING_GAIN` weights emission by image order to pull them back out
 without inventing anything.
+
+**Nothing may clip to white.** This is the single failure mode the render keeps
+finding new ways to reach, and every instance of it has the same shape — some
+quantity added to another until a channel saturates, taking the hue and every
+bit of structure with it. Three separate fixes, all worth keeping:
+
+- The tonemap maps *intensity* and carries the chroma through, instead of
+  running `1 − exp(−c)` per channel. The bleach that remains starts an order of
+  magnitude past the knee and never completes.
+- The disk is **screened** over the lensed background rather than added to it,
+  so a bright wallpaper cannot push the sum flat.
+- Bloom is screened too, and it is fed a **separate emission target** rather
+  than the composed scene. Keying it on the scene meant the lensed wallpaper
+  itself glowed: a pale sky sits around 0.8, clears any sensible threshold, and
+  buries the widget in a halo that has nothing to do with the black hole.
 
 **Sampling the lensed background** uses real screen-space derivatives and a
 mipmapped copy of the capture, so the hardware can pick a mip that matches the
