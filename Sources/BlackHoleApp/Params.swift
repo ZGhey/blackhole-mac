@@ -24,7 +24,7 @@ enum Specs {
     static let order: [String] = [
         "HALO", "LENS_DEPTH", "LENS_FALLOFF", "STAR_GAIN", "DRIFT", "DRIFT_SPEED",
         "DISK_INNER", "DISK_OUTER", "DISK_INCL", "DISK_ROLL",
-        "DISK_GAIN", "DISK_OPACITY", "DISK_SPEED", "DISK_WIND", "DISK_CONTRAST",
+        "DISK_GAIN", "DISK_OPACITY", "DISK_SPEED", "DISK_WIND", "DISK_CONTRAST", "PLUNGE",
         "SPOT_GAIN", "SPOT_RADIUS",
         "DISK_TEMP", "DOPPLER_MIX", "DISK_BEAM", "EXPOSURE", "RING_GAIN",
         "DISK_RATE",
@@ -48,6 +48,7 @@ enum Specs {
         "DISK_SPEED":    ParamSpec(-10.0...10.0, "Accretion disk", 5.0, "Streak pattern speed; negative reverses the orbital direction"),
         "DISK_WIND":     ParamSpec(0.0...15.0, "Accretion disk", 7.0, "Spiral winding tightness of the streaks"),
         "DISK_CONTRAST": ParamSpec(0.0...2.0, "Accretion disk", 1.6, "Streak contrast: 0 = smooth haze, higher = sharp filaments"),
+        "PLUNGE":        ParamSpec(0.0...1.5, "Accretion disk", 0.55, "How brightly the plunging region inside the ISCO still radiates. Matter there cannot hold a circular orbit and falls, but it does not stop glowing — 0 restores the hard geometric rim at DISK_INNER"),
         "SPOT_GAIN":     ParamSpec(0.0...4.0, "Accretion disk", 1.8, "Brightness of an orbiting hot spot — a compact overdensity on a near-ISCO orbit, the same picture used to model Sgr A*'s infrared flares. 0 turns it off. It is what gives the ring a feature you can actually watch go round"),
         "SPOT_RADIUS":   ParamSpec(1.8...8.0, "Accretion disk", 2.4, "Which orbit the hot spot rides, in Schwarzschild radii. Closer in is faster and more strongly beamed, and lenses harder over the shadow"),
 

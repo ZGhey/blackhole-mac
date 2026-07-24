@@ -154,12 +154,13 @@ final class Renderer: NSObject, MTKViewDelegate {
         // Flares and audio modulate how fast the disk turns, so the phase is
         // integrated here rather than derived from `time` in the shader — a
         // rate change applied to a large `time` would jump every streak at once.
-        let (flare, audio, hover) = MainActor.assumeIsolated {
-            () -> (Float, Float, Float) in
+        let (flare, audio, hover, reduceMotion, lowPower) = MainActor.assumeIsolated {
+            () -> (Float, Float, Float, Bool, Bool) in
             Proximity.shared.step(shadowRadius: Float(params.shadowRadiusFraction()))
             return (Impacts.shared.level(),
                     ScreenCapture.shared.capturesAudio ? ScreenCapture.shared.audioLevel : 0,
-                    Proximity.shared.hover)
+                    Proximity.shared.hover,
+                    SystemState.shared.reduceMotion, SystemState.shared.lowPower)
         }
         let rate = Float(abs(params["DISK_SPEED"]) * params["DISK_RATE"])
         diskPhase += Float(dt) * rate * (1 + 1.2 * flare + 0.5 * audio)
@@ -167,7 +168,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         // The GLSL's Lissajous, moved to the CPU with the rest of the motion.
         // Two incommensurate sines per axis: the orbit never visibly repeats.
         driftClock += Float(dt) * Float(params["DRIFT_SPEED"])
-        let amp = Float(params["DRIFT"])
+        // Reduce Motion stops the widget travelling. The disk still turns —
+        // that is what it is, not incidental movement.
+        let amp = reduceMotion ? 0 : Float(params["DRIFT"])
         let k = driftClock * 0.25
         let drift = SIMD2<Float>(
             amp * (0.75 * sin(k * 0.37) + 0.25 * sin(k * 0.83 + 1.0)),
@@ -264,6 +267,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         u.feedR = fed.colour.x
         u.feedG = fed.colour.y
         u.feedB = fed.colour.z
+        u.plunge = Float(params["PLUNGE"])
+        if lowPower { u.nSteps = max(u.nSteps * 0.6, 12) }
 
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)

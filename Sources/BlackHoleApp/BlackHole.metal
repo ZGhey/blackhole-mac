@@ -38,7 +38,7 @@ struct Uniforms {
     float driftX, driftY, lensBoost, ringGain;
     float fallX, fallY, fallSize, fallAlpha;
     float hover, fallTear, feedAngle, feedStrength;
-    float feedR, feedG, feedB, pad0;
+    float feedR, feedG, feedB, plunge;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -513,7 +513,13 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
             float tc  = sPrev / (sPrev - s);
             float3 xc = mix(xPrev, x, tc);
             float rc  = length(xc);
-            if (rc > rin && rc < rout) {
+            // Down to just outside the horizon, not just to the ISCO. Inside
+            // the innermost stable orbit matter cannot hold a circular orbit
+            // and plunges — it is still there and still radiating, thinning as
+            // it accelerates inward and reddening as it falls. Stopping the
+            // disk dead at DISK_INNER left a hard geometric rim, which was the
+            // one obviously drawn edge left in the picture.
+            if (rc > 1.02f && rc < rout) {
                 // The photon ring is not a separate object — it is the stack of
                 // higher-order images, made by rays that wound around the
                 // photon sphere before escaping. Every extra crossing is one
@@ -525,8 +531,13 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                 crossings++;
                 float ring = 1.0f + U.ringGain * (1.0f - exp(-float(crossings - 1)));
 
-                float band = smoothstep(rin, rin * 1.25f, rc)
-                           * (1.0f - smoothstep(rout * 0.70f, rout, rc));
+                // Outside the ISCO the inner edge softens as before; inside
+                // it, emission falls off steeply toward the horizon rather than
+                // stopping.
+                float inner = rc >= rin
+                    ? smoothstep(rin, rin * 1.25f, rc)
+                    : U.plunge * pow(smoothstep(1.02f, rin, rc), 2.5f);
+                float band = inner * (1.0f - smoothstep(rout * 0.70f, rout, rc));
 
                 // disk-plane polar coords for the streak texture
                 float phi   = atan2(dot(xc, e2), xc.x);
@@ -553,7 +564,10 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                     float dR    = (rc - rs) / max(rs * 0.30f, 0.2f);
                     spot = exp(-dPhi * dPhi / 0.34f - dR * dR * 0.5f) * U.spotGain;
                 }
-                float kep   = pow(rin / rc, 1.5f);
+                // Faster the deeper it is, but capped: the plunging region
+                // would otherwise spin the streak pattern past what the pixel
+                // grid can carry.
+                float kep   = min(pow(rin / rc, 1.5f), 3.0f);
                 // √(1 − 1.5/r): time runs slower for the inner orbits — the
                 // pattern visibly freezes toward the inner edge
                 float gloc  = sqrt(max(1.0f - 1.5f / rc, 0.02f));
@@ -577,8 +591,19 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                 gg = mix(1.0f, gg, U.dopplerMix);
 
                 // Shakura–Sunyaev temperature profile, peak normalized to 1
-                float xpr   = max(1.0f - sqrt(rin / rc), 0.0f);
-                float tprof = pow(rin / rc, 0.75f) * pow(xpr, 0.25f) / 0.488f;
+                // Shakura–Sunyaev is only defined outside the ISCO — its
+                // no-torque factor goes to zero exactly at rin, which is why
+                // widening the geometry alone produced nothing inside it. The
+                // plunging gas is held at the inner-edge profile instead; the
+                // real dimming there comes from the density falling and the
+                // redshift, both of which are already accounted for.
+                // ...and it is exactly zero *at* rin, which is why clamping
+                // to the inner edge still produced nothing. The plunging gas is
+                // held at the profile's peak instead, around 1.36 rin, with the
+                // falloff above doing the dimming.
+                float rt    = rc >= rin ? rc : rin * 1.36f;
+                float xpr   = max(1.0f - sqrt(rin / rt), 0.0f);
+                float tprof = pow(rin / rt, 0.75f) * pow(xpr, 0.25f) / 0.488f;
                 // The spot is denser *and* hotter, which is what separates it
                 // from the surrounding gas by colour as well as brightness.
                 // What was swallowed does not simply vanish: the debris

@@ -251,6 +251,14 @@ was tried and measured: no benefit, three extra fetches.) What it does fix is
 the ring and the higher-order images, where the compression is real. Real screen
 content is not periodic and does not beat the way a checkerboard does.
 
+The **plunging region** inside the ISCO is drawn rather than cut away. Matter
+there cannot hold a circular orbit and falls, but it does not stop glowing, and
+stopping the disk dead at `DISK_INNER` left a hard geometric rim — the one
+obviously drawn edge in the picture. Widening the geometry alone produces
+nothing, twice over: the Shakura–Sunyaev no-torque factor is zero *at* `rin`, so
+the profile has to be evaluated at its peak (≈1.36 `rin`) and the falloff
+applied separately.
+
 The disk's own higher-order images are softened by image order instead: each
 further image packs a whole disk into a thinner ring, far past what the pixel
 grid can carry, so fading their contrast is the cheapest honest antialiasing
@@ -263,6 +271,16 @@ nine summed taps band visibly at 8 bits. The composite has to raise alpha as
 well as add colour: the widget's output is premultiplied, so light spilling past
 the disk would otherwise be multiplied away against a transparent background and
 never appear. Setting `BLOOM` to 0 skips the whole chain.
+
+## What it stops doing when asked
+
+**Reduce Motion** stops the widget travelling. The disk still turns — that is
+what it is, not incidental movement — but the wandering ends. An ornament that
+ignores that setting is not charming; it is the thing the setting exists to
+turn off.
+
+**Low Power Mode** halves the frame rate and cuts the integration steps by
+40%. Neither is visible when it does not apply, which is the point.
 
 ## Performance
 

@@ -103,5 +103,7 @@ struct Uniforms {
     var feedR: Float = 1
     var feedG: Float = 1
     var feedB: Float = 1
-    var pad0: Float = 0
+    /// How brightly the plunging region inside the ISCO still radiates. 0 is
+    /// the old hard cut at DISK_INNER.
+    var plunge: Float = 0.5
 }

@@ -12,9 +12,11 @@ import SwiftUI
 struct RenderView: View {
     @ObservedObject var params: Params
     @ObservedObject var model: AppModel
+    @ObservedObject var system = SystemState.shared
 
     var body: some View {
         MetalView(params: params, lens: model.lens,
+                  frameRate: system.frameRate(preferred: 60),
                   onError: { model.rendererError = $0 })
     }
 }
@@ -23,6 +25,7 @@ struct RenderView: View {
 struct MetalView: NSViewRepresentable {
     @ObservedObject var params: Params
     let lens: LensSource
+    let frameRate: Int
     /// Startup failures (a Metal shader typo, most likely) surface in the UI
     /// rather than as a silently black window.
     let onError: (String) -> Void
@@ -52,8 +55,8 @@ struct MetalView: NSViewRepresentable {
         view.isPaused = false
         view.enableSetNeedsDisplay = false
         // A widget-sized panel is a fraction of a screen's pixels, so it runs at
-        // the display's own rate without a frame cap.
-        view.preferredFramesPerSecond = 60
+        // the display's own rate — unless the battery says otherwise.
+        view.preferredFramesPerSecond = frameRate
         // The drawable has to carry alpha all the way to the compositor, or the
         // transparent parts of the widget come out black.
         view.layer?.isOpaque = false
@@ -68,5 +71,6 @@ struct MetalView: NSViewRepresentable {
         guard let renderer = context.coordinator.renderer else { return }
         renderer.params = params
         renderer.lens = lens
+        view.preferredFramesPerSecond = frameRate
     }
 }
