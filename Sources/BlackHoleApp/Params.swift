@@ -63,7 +63,7 @@ enum Specs {
         "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.55, "How bright a pixel must be before it starts to glow"),
         "N_STEPS":       ParamSpec(8...128, "Render", 48, "Geodesic integration steps per pixel — the main GPU dial. Only pixels near the hole pay it"),
         "BG_DIM":        ParamSpec(0.0...1.0, "Render", 1.0, "Dims the lensed screen so the disk reads brighter against busy content"),
-        "BG_BLUR":       ParamSpec(0.0...3.0, "Render", 1.0, "Softens the lensed screen in proportion to how hard the lens is squeezing it — the corners stay pixel-exact, the compressed band around the ring turns to glow. 0 is the honest sample, which over a page of text reproduces every line of it a pixel apart"),
+        "BG_BLUR":       ParamSpec(0.0...3.0, "Render", 1.5, "Softens the lensed screen in proportion to how hard the lens is squeezing it — the corners stay pixel-exact, the compressed band around the ring turns to glow. 0 is the honest sample, which over a page of text reproduces every line of it a pixel apart"),
     ]
 
     static func spec(_ name: String) -> ParamSpec {
