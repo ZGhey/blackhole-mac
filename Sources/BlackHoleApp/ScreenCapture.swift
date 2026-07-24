@@ -42,6 +42,9 @@ final class ScreenCapture: NSObject {
     /// Smoothed system-audio envelope, 0…1. The stream already exists for the
     /// picture, so the sound is nearly free — one more output type.
     private(set) var audioLevel: Float = 0
+    /// Coalesces crop re-aims while the widget is being dragged.
+    private var reaimTask: Task<Void, Never>?
+    private static let reaimInterval: Double = 0.1
     /// Arrival rate of screen frames, for telling "the capture stopped" apart
     /// from "nothing behind the widget moved".
     private var framesSinceTick = 0
@@ -119,9 +122,26 @@ final class ScreenCapture: NSObject {
                                        || abs($0.width - rect.width) > 0.5 } ?? true
         sourceRect = rect
         guard changed, isRunning, activeDisplayID == displayID else { return }
-        if #available(macOS 14.0, *), croppedStream, let stream {
-            let config = configuration(for: rect, scale: screen.backingScaleFactor)
-            Task { try? await stream.updateConfiguration(config) }
+        scheduleReaim(scale: screen.backingScaleFactor)
+    }
+
+    /// Re-aim the crop at 10 Hz, not at every mouse-move.
+    ///
+    /// `setSourceRect` runs off NSWindowDidMove, so dragging the widget fired
+    /// one `updateConfiguration` per pixel of travel — measured at one every
+    /// ~17 ms, which is a 60 Hz round-trip to ScreenCaptureKit and ReplayKit
+    /// for a crop that has moved by one point. Coalescing keeps the last
+    /// position rather than the first, so the trailing call always lands on
+    /// where the drag actually ended.
+    private func scheduleReaim(scale: CGFloat) {
+        guard reaimTask == nil else { return }   // in flight; it will read the latest rect
+        reaimTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.reaimInterval * 1_000_000_000))
+            self.reaimTask = nil
+            guard self.croppedStream, let stream = self.stream, let rect = self.sourceRect,
+                  #available(macOS 14.0, *)
+            else { return }
+            try? await stream.updateConfiguration(self.configuration(for: rect, scale: scale))
         }
     }
 
