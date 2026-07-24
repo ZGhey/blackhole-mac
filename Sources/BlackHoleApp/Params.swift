@@ -59,8 +59,8 @@ enum Specs {
         "EXPOSURE":      ParamSpec(0.05...5.0, "Color & light", 1.4, "Tonemap exposure for the disk light; the screen behind is never tonemapped"),
 
         "DISK_RATE":     ParamSpec(0.0...1.0, "Render", 0.35, "How fast the disk turns overall — the gravitational time dilation theme. Lower reads as heavier"),
-        "BLOOM":         ParamSpec(0.0...2.0, "Render", 0.55, "How much bright light spills into its surroundings. 0 skips the four extra passes entirely — it is what makes the disk read as bright rather than merely pale"),
-        "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.55, "How bright a pixel must be before it starts to glow"),
+        "BLOOM":         ParamSpec(0.0...2.0, "Render", 0.35, "How much bright light spills into its surroundings. 0 skips the four extra passes entirely — it is what makes the disk read as bright rather than merely pale. Too much and the disk spills onto itself, which costs it every filament"),
+        "BLOOM_THRESHOLD": ParamSpec(0.2...1.0, "Render", 0.85, "How bright a pixel must be before it starts to glow. Most of the disk sits around 0.7, so anything much below that blooms the disk into its own neighbours and flattens the streaks into one sheet — this wants to catch the inner edge and the photon ring, not the whole thing"),
         "N_STEPS":       ParamSpec(8...128, "Render", 48, "Geodesic integration steps per pixel — the main GPU dial. Only pixels near the hole pay it"),
         "BG_DIM":        ParamSpec(0.0...1.0, "Render", 1.0, "Dims the lensed screen so the disk reads brighter against busy content"),
         "BG_BLUR":       ParamSpec(0.0...3.0, "Render", 1.5, "Softens the lensed screen in proportion to how hard the lens is squeezing it — the corners stay pixel-exact, the compressed band around the ring turns to glow. 0 is the honest sample, which over a page of text reproduces every line of it a pixel apart"),
