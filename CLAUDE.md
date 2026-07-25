@@ -20,7 +20,7 @@ swift run                  # run it
 xcrun -sdk macosx metal -c Sources/BlackHoleApp/BlackHole.metal -o /tmp/bh.air   # syntax-check the shader
 ```
 
-There are no tests and no linter. Verification here is measurement: render offscreen and count. Always run the bundled binary under `MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1` after touching render targets — it has caught two bugs that were invisible in rendered frames.
+There is no linter, and `./make-check.sh` is what passes for a test suite: three offscreen measurements, each of which corresponds to a bug that actually shipped — the streak field winding itself below the pixel grid with uptime, a style clipping to white, and the lensed background aliasing. Run it after touching the shader. Verification here is measurement: render offscreen and count. Always run the bundled binary under `MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1` after touching render targets — it has caught two bugs that were invisible in rendered frames.
 
 ## The uniform struct
 
