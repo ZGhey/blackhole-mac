@@ -1,0 +1,33 @@
+/* メニューバーと、そこに現れうるいくつかの文。「詳細」パネルは意図的に翻訳して
+   いない。あそこのラベルはシェーダーとドキュメントに一致させる必要のあるパラ
+   メータ識別子であり、説明文は密度の高い天体物理の記述で、雑な翻訳はかえって
+   害になる。 */
+
+"menu.size"             = "サイズ";
+"menu.size.small"       = "小";
+"menu.size.medium"      = "中";
+"menu.size.large"       = "大";
+
+"menu.style"            = "スタイル";
+"menu.style.saveAs"     = "現在の設定を保存…";
+/* %@ は削除するスタイル名。 */
+"menu.style.delete"     = "「%@」を削除";
+
+"menu.hide"             = "隠す (⌥⌘B)";
+"menu.show"             = "表示 (⌥⌘B)";
+"menu.checkUpdates"     = "アップデートを確認…";
+"menu.advanced"         = "詳細…";
+"menu.launchAtLogin"    = "ログイン時に起動";
+"menu.quit"             = "Black Hole を終了";
+
+"capture.starting"      = "画面キャプチャを開始しています…";
+"capture.denied"        = "画面収録の許可が拒否されました。「システム設定 ▸ プライバシーとセキュリティ ▸ 画面収録」で許可してから、レンズを有効にし直してください。";
+"capture.askAgain"      = "画面収録をもう一度リクエスト";
+"capture.openSettings"  = "プライバシー設定を開く…";
+
+"style.save.title"      = "この見た目を保存";
+"style.save.message"    = "現在のすべてのスライダーの値を、好きな名前で保存します。";
+"style.save.ok"         = "保存";
+"style.save.cancel"     = "キャンセル";
+/* 内蔵スタイルの上に保存するときの候補名。%@ は元のスタイル名。 */
+"style.save.copy"       = "%@ のコピー";

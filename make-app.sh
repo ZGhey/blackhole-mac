@@ -34,6 +34,24 @@ cp -R .build/release/BlackHoleApp_BlackHoleApp.bundle "$APP/Contents/Resources/"
 # inside the SwiftPM resource bundle is where the app finds it, not the Finder.
 cp Sources/BlackHoleApp/AppIcon.icns "$APP/Contents/Resources/"
 
+# The strings are read out of the SwiftPM bundle at runtime (see Localized.swift),
+# which is enough to translate the menu — but macOS decides whether an app is
+# *offered* a language, in System Settings ▸ Language & Region ▸ Applications,
+# by looking for .lproj folders here. Mirroring them costs a few kilobytes and
+# is what makes the per-app override work.
+#
+# SwiftPM lowercases the folder names; the language picker wants the canonical
+# spelling, so zh-hans comes back as zh-Hans.
+for lproj in .build/release/BlackHoleApp_BlackHoleApp.bundle/*.lproj; do
+    [ -d "$lproj" ] || continue
+    name="$(basename "$lproj" .lproj)"
+    case "$name" in
+        zh-hans) name="zh-Hans" ;;
+        zh-hant) name="zh-Hant" ;;
+    esac
+    cp -R "$lproj" "$APP/Contents/Resources/$name.lproj"
+done
+
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,6 +67,17 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleVersion</key>         <string>${BUILD}</string>
     <key>CFBundleIconFile</key>        <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>  <string>13.0</string>
+    <!-- What the app can be shown in. macOS picks from these against the
+         system's preferred languages; there is no in-app language setting and
+         should not be, since that would override the per-app one. -->
+    <key>CFBundleDevelopmentRegion</key> <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+        <string>ja</string>
+    </array>
     <key>NSHighResolutionCapable</key> <true/>
     <!-- Lives on the desktop and in the menu bar; no Dock icon, no windows. -->
     <key>LSUIElement</key>             <true/>

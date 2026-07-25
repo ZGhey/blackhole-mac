@@ -1,0 +1,33 @@
+/* The menu bar, and the few sentences that can appear in it. The Advanced
+   panel is deliberately not translated: its labels are parameter identifiers
+   that have to match the shader and the docs, and its help text is dense
+   astrophysics that a rough translation would do more harm than good to. */
+
+"menu.size"             = "Size";
+"menu.size.small"       = "Small";
+"menu.size.medium"      = "Medium";
+"menu.size.large"       = "Large";
+
+"menu.style"            = "Style";
+"menu.style.saveAs"     = "Save current as…";
+/* %@ is the name of the saved style being removed. */
+"menu.style.delete"     = "Delete “%@”";
+
+"menu.hide"             = "Hide (⌥⌘B)";
+"menu.show"             = "Show (⌥⌘B)";
+"menu.checkUpdates"     = "Check for Updates…";
+"menu.advanced"         = "Advanced…";
+"menu.launchAtLogin"    = "Launch at login";
+"menu.quit"             = "Quit Black Hole";
+
+"capture.starting"      = "starting the screen capture…";
+"capture.denied"        = "Screen Recording permission denied. Grant it in System Settings ▸ Privacy & Security ▸ Screen Recording, then re-enable panel lensing.";
+"capture.askAgain"      = "Ask for Screen Recording again";
+"capture.openSettings"  = "Open Privacy Settings…";
+
+"style.save.title"      = "Save this look";
+"style.save.message"    = "Every slider as it stands now, under a name of your choosing.";
+"style.save.ok"         = "Save";
+"style.save.cancel"     = "Cancel";
+/* Suggested name when saving on top of a built-in style. %@ is its name. */
+"style.save.copy"       = "%@ copy";

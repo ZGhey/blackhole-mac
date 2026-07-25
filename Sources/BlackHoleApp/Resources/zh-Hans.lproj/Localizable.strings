@@ -1,0 +1,32 @@
+/* 菜单栏,以及可能出现在其中的几句话。“高级”面板刻意不翻译:那里的标签是
+   参数标识符,要跟 shader 和文档对得上,而它的说明文字是很密的天体物理描述,
+   粗糙的翻译只会帮倒忙。 */
+
+"menu.size"             = "尺寸";
+"menu.size.small"       = "小";
+"menu.size.medium"      = "中";
+"menu.size.large"       = "大";
+
+"menu.style"            = "样式";
+"menu.style.saveAs"     = "存储当前样式为…";
+/* %@ 是要删除的样式名。 */
+"menu.style.delete"     = "删除“%@”";
+
+"menu.hide"             = "隐藏 (⌥⌘B)";
+"menu.show"             = "显示 (⌥⌘B)";
+"menu.checkUpdates"     = "检查更新…";
+"menu.advanced"         = "高级…";
+"menu.launchAtLogin"    = "登录时启动";
+"menu.quit"             = "退出 Black Hole";
+
+"capture.starting"      = "正在启动屏幕捕捉…";
+"capture.denied"        = "屏幕录制权限被拒绝。请在“系统设置 ▸ 隐私与安全性 ▸ 屏幕录制”中授权,然后重新启用镜头。";
+"capture.askAgain"      = "重新请求屏幕录制权限";
+"capture.openSettings"  = "打开隐私设置…";
+
+"style.save.title"      = "存储这个外观";
+"style.save.message"    = "把当前每一个滑块的值,以你起的名字保存下来。";
+"style.save.ok"         = "存储";
+"style.save.cancel"     = "取消";
+/* 在内置样式基础上保存时建议的名字。%@ 是原样式名。 */
+"style.save.copy"       = "%@ 副本";

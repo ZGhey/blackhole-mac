@@ -78,9 +78,9 @@ enum WidgetSize: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .small:  return "Small"
-        case .medium: return "Medium"
-        case .large:  return "Large"
+        case .small:  return L("menu.size.small")
+        case .medium: return L("menu.size.medium")
+        case .large:  return L("menu.size.large")
         }
     }
     var points: Double {
@@ -211,11 +211,11 @@ final class AppModel: ObservableObject {
     var captureStatus: String? {
         guard lens == .screen else { return nil }
         if let failure = ScreenCapture.shared.failure { return failure }
-        return ScreenCapture.shared.isRunning ? nil : "starting the screen capture…"
+        return ScreenCapture.shared.isRunning ? nil : L("capture.starting")
     }
 
     var captureDenied: Bool {
-        ScreenCapture.shared.failure?.contains("Screen Recording") ?? false
+        ScreenCapture.shared.permissionDenied
     }
 
     init() {
@@ -264,10 +264,10 @@ struct MenuContent: View {
         if let status = model.captureStatus {
             Text(status)
             if model.captureDenied {
-                Button("Ask for Screen Recording again") {
+                Button(L("capture.askAgain")) {
                     ScreenCapture.shared.resetPermissionAndRetry()
                 }
-                Button("Open Privacy Settings…") {
+                Button(L("capture.openSettings")) {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                         NSWorkspace.shared.open(url)
                     }
@@ -276,7 +276,7 @@ struct MenuContent: View {
             Divider()
         }
 
-        Menu("Size") {
+        Menu(L("menu.size")) {
             ForEach(WidgetSize.allCases) { size in
                 Button(check(WidgetSize.nearest(to: model.size) == size) + size.label) {
                     model.size = size.points
@@ -284,7 +284,7 @@ struct MenuContent: View {
             }
         }
 
-        Menu("Style") {
+        Menu(L("menu.style")) {
             ForEach(Specs.styles, id: \.0) { name, _ in
                 Button(check(params.styleName == name) + name) { params.apply(style: name) }
             }
@@ -295,9 +295,9 @@ struct MenuContent: View {
                 }
             }
             Divider()
-            Button("Save current as…") { StylePrompt.saveCurrent(into: params) }
+            Button(L("menu.style.saveAs")) { StylePrompt.saveCurrent(into: params) }
             if params.customStyles[params.styleName] != nil {
-                Button("Delete “\(params.styleName)”") {
+                Button(L("menu.style.delete", params.styleName)) {
                     params.deleteStyle(named: params.styleName)
                 }
             }
@@ -312,13 +312,16 @@ struct MenuContent: View {
         // a value nobody can see is a value nobody can put back.
         Divider()
 
-        Button(model.hidden ? "Show (⌥⌘B)" : "Hide (⌥⌘B)") { model.hidden.toggle() }
+        Button(model.hidden ? L("menu.show") : L("menu.hide")) { model.hidden.toggle() }
         // Checks happen on their own once a day; this is for when you want to
         // know now. Disabled while a check is already running — see `Updater`.
-        Button("Check for Updates…") { updater.checkForUpdates() }
+        Button(L("menu.checkUpdates")) { updater.checkForUpdates() }
             .disabled(!updater.canCheck)
-        Button("Advanced…") { Shared.advanced.show() }
-        Button("Quit Black Hole") { NSApp.terminate(nil) }
+        Button(check(model.launchAtLogin) + L("menu.launchAtLogin")) {
+            model.launchAtLogin.toggle()
+        }
+        Button(L("menu.advanced")) { Shared.advanced.show() }
+        Button(L("menu.quit")) { NSApp.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
     }
 
@@ -362,13 +365,13 @@ final class AdvancedWindow {
 enum StylePrompt {
     static func saveCurrent(into params: Params) {
         let alert = NSAlert()
-        alert.messageText = "Save this look"
-        alert.informativeText = "Every slider as it stands now, under a name of your choosing."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L("style.save.title")
+        alert.informativeText = L("style.save.message")
+        alert.addButton(withTitle: L("style.save.ok"))
+        alert.addButton(withTitle: L("style.save.cancel"))
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = params.customStyles[params.styleName] != nil
-            ? params.styleName : "\(params.styleName) copy"
+            ? params.styleName : L("style.save.copy", params.styleName)
         alert.accessoryView = field
         NSApp.activate(ignoringOtherApps: true)
         alert.window.initialFirstResponder = field

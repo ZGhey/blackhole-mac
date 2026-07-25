@@ -59,6 +59,11 @@ final class ScreenCapture: NSObject {
         }
     }
     private(set) var failure: String?
+    /// Whether the last failure was TCC refusing, kept apart from the message
+    /// because the message is shown to a person and therefore translated —
+    /// deciding "was this a permission problem" by searching it for the words
+    /// "Screen Recording" only works in English.
+    private(set) var permissionDenied = false
 
     private var stream: SCStream?
     private var textureCache: CVMetalTextureCache?
@@ -209,12 +214,24 @@ final class ScreenCapture: NSObject {
         }
     }
 
+    /// What went wrong, in a form both a person and a `switch` can read.
+    struct Failure {
+        let message: String
+        let permissionDenied: Bool
+
+        init(_ message: String, permissionDenied: Bool = false) {
+            self.message = message
+            self.permissionDenied = permissionDenied
+        }
+    }
+
     /// Report a failure once per distinct message instead of once per attempt.
-    private func note(failure message: String) {
-        self.failure = message
-        guard loggedFailure != message else { return }
-        loggedFailure = message
-        Self.log.error("\(message, privacy: .public)")
+    private func note(failure: Failure) {
+        self.failure = failure.message
+        self.permissionDenied = failure.permissionDenied
+        guard loggedFailure != failure.message else { return }
+        loggedFailure = failure.message
+        Self.log.error("\(failure.message, privacy: .public)")
     }
 
     /// Forget the permission decision and ask again, which is the only way to
@@ -229,6 +246,7 @@ final class ScreenCapture: NSObject {
         task.waitUntilExit()
         loggedFailure = nil
         failure = nil
+        permissionDenied = false
         retryTask?.cancel()
         retryTask = nil
         pump()
@@ -243,7 +261,7 @@ final class ScreenCapture: NSObject {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true)
             guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                note(failure: "display \(displayID) is not in the shareable content list")
+                note(failure: Failure("display \(displayID) is not in the shareable content list"))
                 return
             }
             let ours = content.windows.filter { excludedWindowIDs.contains($0.windowID) }
@@ -257,7 +275,7 @@ final class ScreenCapture: NSObject {
                     false, onScreenWindowsOnly: true)
                 let retryOurs = retry.windows.filter { excludedWindowIDs.contains($0.windowID) }
                 guard !retryOurs.isEmpty else {
-                    note(failure: "could not identify the widget's own window; refusing to capture (it would mirror itself)")
+                    note(failure: Failure("could not identify the widget's own window; refusing to capture (it would mirror itself)"))
                     return
                 }
                 await begin(displayID: displayID, display: display, ours: retryOurs)
@@ -302,6 +320,7 @@ final class ScreenCapture: NSObject {
             self.isRunning = true
             self.activeDisplayID = displayID
             self.failure = nil
+            self.permissionDenied = false
             self.loggedFailure = nil
             Self.log.notice("streaming display \(displayID, privacy: .public) at \(config.width, privacy: .public)x\(config.height, privacy: .public), excluding \(ours.count, privacy: .public) own window(s)")
         } catch {
@@ -348,15 +367,17 @@ final class ScreenCapture: NSObject {
     /// Pixels per point in the capture. See `configuration(for:scale:)`.
     private static let captureScale: CGFloat = 1
 
-    private static func describe(_ error: Error) -> String {
+    private static func describe(_ error: Error) -> Failure {
         let ns = error as NSError
         // TCC denial is the overwhelmingly likely failure, and the raw message
-        // ("The user declined…") does not say where to fix it.
+        // ("The user declined…") does not say where to fix it. It is also the
+        // one the menu offers buttons for, which is why it carries a flag
+        // rather than being recognised by its wording.
         if ns.domain == SCStreamError.errorDomain,
            ns.code == SCStreamError.userDeclined.rawValue {
-            return "Screen Recording permission denied. Grant it in System Settings ▸ Privacy & Security ▸ Screen Recording, then re-enable panel lensing."
+            return Failure(L("capture.denied"), permissionDenied: true)
         }
-        return ns.localizedDescription
+        return Failure(ns.localizedDescription)
     }
 }
 

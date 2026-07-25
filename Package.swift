@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "BlackHoleApp",
+    // The base language. Everything else is a .lproj beside it, and macOS picks
+    // between them from the system's preferred languages — the app has no
+    // language setting of its own and should not grow one.
+    defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     dependencies: [
         // Sparkle does the part that is easy to get wrong: verifying what was
@@ -29,7 +33,10 @@ let package = Package(
             path: "Sources/BlackHoleApp",
             resources: [.copy("BlackHole.metal"),
                         .copy("AppIcon.icns"),
-                        .copy("MenuIcon.png")],
+                        .copy("MenuIcon.png"),
+                        // .process, not .copy: SwiftPM only treats *.lproj as
+                        // localizations when it is processing them.
+                        .process("Resources")],
             // Sparkle arrives as an XCFramework, so the built binary has to be
             // able to find it next to itself once make-app.sh has put it in
             // Contents/Frameworks. Under plain `swift run` the loader falls back
