@@ -60,13 +60,13 @@ func loadBackdrop() -> (texture: MTLTexture, pixels: [UInt8], width: Int, height
                         bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
                         bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
                             | CGBitmapInfo.byteOrder32Little.rawValue)!
-    // A CGContext counts rows from the bottom and Metal counts them from the
-    // top, so drawing straight in hands the shader a vertically flipped screen —
-    // which is invisible in the untouched corners and wrong everywhere the lens
-    // actually bends something. Flip here, and the buffer is top-down like the
-    // texture and like the shader's uv.
-    ctx.translateBy(x: 0, y: CGFloat(h))
-    ctx.scaleBy(x: 1, y: -1)
+    // No transform. `CGContext.draw` puts the image's first row at the top of
+    // the destination rect whatever way the context counts, so the buffer comes
+    // out top-down — which is what the Metal texture wants and what the shader's
+    // uv assumes. Flipping here to "correct" for the bottom-left origin is the
+    // mistake: it hands the shader a mirrored screen, and since the widget was
+    // then drawn mirrored too, the two cancelled and only the hole came out
+    // upside down.
     ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
 
     let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
@@ -191,13 +191,7 @@ func compose(_ widget: [UInt8], label: String) -> CGImage {
                         space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
                             | CGBitmapInfo.byteOrder32Little.rawValue)!
     ctx.interpolationQuality = .high
-    // Both layers are top-down now, and this context is not, so both get the
-    // same flip. Flipping one and not the other is the bug this replaced.
-    ctx.saveGState()
-    ctx.translateBy(x: 0, y: CGFloat(S))
-    ctx.scaleBy(x: 1, y: -1)
     ctx.draw(backdropLayer, in: CGRect(x: 0, y: 0, width: S, height: S))
-    ctx.restoreGState()
 
     var wp = widget
     let over = CGImage(width: S, height: S, bitsPerComponent: 8, bitsPerPixel: 32,
@@ -207,12 +201,9 @@ func compose(_ widget: [UInt8], label: String) -> CGImage {
                        provider: CGDataProvider(data: Data(wp) as CFData)!,
                        decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
     wp.removeAll()
-    // The shader's y runs top-down; CGContext's runs bottom-up.
-    ctx.saveGState()
-    ctx.translateBy(x: 0, y: CGFloat(S))
-    ctx.scaleBy(x: 1, y: -1)
+    // Straight in, exactly as render-icon draws the same read-back buffer. That
+    // tool's output is the shipped app icon, so it is the orientation to match.
     ctx.draw(over, in: CGRect(x: 0, y: 0, width: S, height: S))
-    ctx.restoreGState()
 
     let ns = NSGraphicsContext(cgContext: ctx, flipped: false)
     NSGraphicsContext.saveGraphicsState()
