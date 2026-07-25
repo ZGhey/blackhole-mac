@@ -124,6 +124,8 @@ final class PanelController {
         startPositionTimer()
         startHitTestTimer()
         observeScreenChanges(for: p)
+        observeVisibility(for: p)
+        running = true
     }
 
     // ------------------------------------------------------------ capture --
@@ -144,40 +146,103 @@ final class PanelController {
     /// So hiding now really stops: the stream is torn down and the view stops
     /// drawing. The teardown waits for the fade to finish, or the lensed
     /// background would vanish a beat before the widget does.
+    // ------------------------------------------------------------ parking --
+
+    /// Everything that can stop the widget without the user asking.
+    ///
+    /// They all want the same thing — tear the capture down, stop drawing, stop
+    /// polling — so they share one path. Only the explicit hide fades; nobody
+    /// can see the others happen by definition.
+    private var displaysAsleep = false
+    private var screenLocked = false
+    private var occluded = false
+
+    /// Should anything be running at all?
+    private var shouldRun: Bool {
+        !model.hidden && !displaysAsleep && !screenLocked && !occluded
+    }
+    private var running = true
+
+    /// Park or unpark to match `shouldRun`. Idempotent.
+    private func syncRunning(reason: String) {
+        let want = shouldRun
+        guard want != running else { return }
+        running = want
+        if want {
+            lensChanged()
+            startHitTestTimer()
+            Proximity.shared.setEnabled(model.noticesPointer)
+        } else {
+            // The hit-region poll would otherwise keep handing the window back
+            // its clicks the moment the pointer crossed where the widget used
+            // to be — a parked widget that still eats clicks is worse than a
+            // visible one. Stopping it also parks the last 60 Hz timer.
+            // Proximity goes with it, or a cursor hidden inside the hole at the
+            // moment the widget parks never comes back: the render loop that
+            // would have restored it is no longer running.
+            hitTestTimer?.invalidate()
+            hitTestTimer = nil
+            Proximity.shared.setEnabled(false)
+            panel?.ignoresMouseEvents = true
+            ScreenCapture.shared.stop()
+        }
+        Self.log.notice("\(want ? "running" : "parked", privacy: .public) (\(reason, privacy: .public))")
+    }
+
+    /// Hiding used to be cosmetic: alpha 0, everything else still going. That is
+    /// exactly wrong for the one moment anyone reaches for it — you hide the
+    /// widget because you are about to share your screen, and it went on holding
+    /// a ScreenCaptureKit stream with macOS going on saying so in the menu bar.
     func hiddenChanged() {
         guard let panel else { return }
         panel.ignoresMouseEvents = model.hidden
         if model.hidden {
-            // The hit-region poll would otherwise keep handing the window back
-            // its clicks the moment the pointer crossed where the widget used
-            // to be — a hidden widget that still eats clicks is worse than a
-            // visible one. Stopping it also parks the last 60 Hz timer in the
-            // process. Proximity goes with it, or a cursor hidden inside the
-            // hole at the moment you hide the widget never comes back: the
-            // render loop that would have restored it is paused.
-            hitTestTimer?.invalidate()
-            hitTestTimer = nil
-            Proximity.shared.setEnabled(false)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Self.fade
                 panel.animator().alphaValue = 0
             } completionHandler: { [weak self] in
-                guard let self, self.model.hidden else { return }   // shown again mid-fade
-                ScreenCapture.shared.stop()
-                Self.log.notice("hidden: capture stopped, rendering paused")
+                // The teardown waits for the fade, or the lensed background
+                // disappears a beat before the widget does.
+                MainActor.assumeIsolated { self?.syncRunning(reason: "hidden") }
             }
         } else {
-            // Back on before the fade, so the first frames have something to
-            // lens; the capture starts in about 200 ms and the fade covers it.
-            lensChanged()
-            startHitTestTimer()
-            Proximity.shared.setEnabled(model.noticesPointer)
-            Self.log.notice("shown: capture restarting, rendering resumed")
+            // Back before the fade, so the first frames have something to lens;
+            // the capture takes about 130 ms and the fade covers it.
+            syncRunning(reason: "shown")
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Self.fade
                 panel.animator().alphaValue = 1
             }
         }
+    }
+
+    /// Displays asleep, session locked, or the widget fully covered — nobody is
+    /// looking at it, so it has no business holding a capture stream or
+    /// integrating geodesics. The widget floats above ordinary windows, so
+    /// occlusion in practice means the screen went away rather than a window
+    /// covering it; it is the cheap general net behind the two specific ones.
+    private func observeVisibility(for panel: NSPanel) {
+        let ws = NSWorkspace.shared.notificationCenter
+        let dnc = DistributedNotificationCenter.default()
+        func on(_ centre: NotificationCenter, _ name: Notification.Name,
+                _ body: @escaping @MainActor (PanelController) -> Void) {
+            observers.append(centre.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { if let self { body(self) } }
+            })
+        }
+        on(ws, NSWorkspace.screensDidSleepNotification) { $0.displaysAsleep = true; $0.syncRunning(reason: "displays asleep") }
+        on(ws, NSWorkspace.screensDidWakeNotification)  { $0.displaysAsleep = false; $0.syncRunning(reason: "displays awake") }
+        on(dnc, Notification.Name("com.apple.screenIsLocked"))   { $0.screenLocked = true; $0.syncRunning(reason: "screen locked") }
+        on(dnc, Notification.Name("com.apple.screenIsUnlocked")) { $0.screenLocked = false; $0.syncRunning(reason: "screen unlocked") }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let p = self.panel else { return }
+                self.occluded = !p.occlusionState.contains(.visible)
+                self.syncRunning(reason: self.occluded ? "occluded" : "visible")
+            }
+        })
     }
 
     private static let fade: TimeInterval = 0.25
