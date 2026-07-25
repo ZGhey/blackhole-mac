@@ -1,5 +1,7 @@
 # Black Hole — a floating widget for macOS
 
+**English** · [简体中文](README.zh-Hans.md)
+
 A hand port of [`blackhole.glsl`](https://github.com/s0xDk/ghostty-blackhole),
 lifted out of Ghostty into a native macOS app: Metal, one fullscreen triangle,
 one fragment shader.
@@ -11,52 +13,55 @@ painted on.
 It floats above your windows and **bends the live screen behind it**. Your
 editor, your browser, your Finder icons genuinely warp around the horizon.
 
+Download the latest **[`Black Hole.dmg`](../../releases/latest)**, or build it
+yourself:
+
 ```sh
 ./make-signing-cert.sh     # once — see "Permissions" below
 ./make-app.sh && open "dist/Black Hole.app"
 ```
 
-Requires macOS 13+. There is no Dock icon and no main window: the app lives in
-the menu bar (⚫).
+Requires macOS 13+ on Apple silicon. There is no Dock icon and no main window:
+the app lives in the menu bar (⚫). The menu is translated into Simplified
+Chinese, Traditional Chinese and Japanese, and follows the system's language.
+
+The download is signed but **not notarized**, so the first launch needs
+right-click ▸ **Open** rather than a double-click. After that macOS remembers.
 
 ## Using it
 
-Everything is in the menu-bar menu.
+The menu has two things in it, because two is what it needs:
 
-- **Size** — Small, Medium, Large. Dragging anywhere on the disc moves it, and
-  Position ▸ Snap puts it flush against an edge, which dragging by hand cannot
-  quite reach.
+- **Size** — Small, Medium, Large. Drag anywhere on the disc to move it.
 - **Style** — Inferno, Gargantua, M87\* donut, Face-on ember, Quasar, Blazar,
   Pure lens, Zen. These disagree wildly about how wide the accretion disk is
   (7 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
   until the bright part fits the frame. Every style fills the same widget
   without being clipped.
-- **Lens** — *Live screen* (the default) or *Stars only*, which needs no
-  permission and leaves everything but the hole transparent. **Pulse with
-  audio** drives the disk's brightness and rotation from system audio; it rides
-  the same capture stream, so it needs the live-screen lens.
-- **Position** — *Stay put*, *Follow cursor*, or *Snap to active window*
-  (Accessibility permission). Follow-cursor is decoration only: it sits under
-  the pointer, so it stays click-through and cannot take drops.
-- **Dropped things** — drop a file, a selection of text, a link or an image on
-  the hole and watch it be eaten (below). **The default is the animation only
-  and touches nothing**; moving files to the Trash is opt-in, and only ever
-  applies to things that exist on disk.
-- **Frame rate** — 60, 30 or 15 fps. Not a quality dial; the geodesics are the
-  same either way. Measured at Medium, dropping 60 → 30 saved about a point of
-  CPU (10.3% → 9.2%) and a GPU difference too small to separate from the noise,
-  so reach for it at Large on a high-DPI display or on battery, not by default.
-  Low Power Mode caps it at 30 regardless.
-- **Swallow the pointer** — put the cursor inside and its image is dragged
-  toward the middle, stretched and reddened until it goes out. The real pointer
-  is never touched; move back out and the image catches up.
+
+Everything else the widget does, it does without being asked:
+
+- **Drop something on it** — a file, a selection of text, a link, an image — and
+  watch it be eaten (below). **It touches nothing**: the animation is the whole
+  of it, and nothing is moved, copied or deleted.
+- **Put the pointer inside** and its image is dragged toward the middle,
+  stretched and reddened until it goes out. The real pointer is never touched;
+  move back out and the image catches up.
+- **It lenses the live screen**, which is what Screen Recording is for. Without
+  that permission it draws the hole and the starfield over a transparent
+  background and carries on.
+
+And the rest of the menu is the things that are not settings:
+
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
   so it does nothing under `swift run BlackHoleApp`.
+- **Check for Updates…** — see below.
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
   Anything you tune can be kept: Style ▸ **Save current as…**. Custom looks are
   stored whole rather than as a sparse patch, because a look you saved is the
   look you saw, and inheriting stray values from whatever was loaded before
-  would not reproduce it.
+  would not reproduce it. This panel is English only: its labels are parameter
+  names that have to match the shader and the docs.
 - **⌥⌘B** hides and shows it. Carbon's `RegisterEventHotKey`, deliberately not
   an `NSEvent` monitor — those need the Accessibility permission for key
   events, and a widget you want to hide should not demand the right to watch
@@ -137,7 +142,26 @@ menu runs `tccutil reset ScreenCapture` so macOS prompts fresh. A denied or
 failed capture retries every 5 s and reports once rather than spinning — an
 immediate retry loop hammers TCC and floods the log.
 
-**Accessibility** is needed only for *Snap to active window*.
+## Updates
+
+**Check for Updates…** in the menu, and a check of its own once a day. Sparkle
+does the download-verify-replace-relaunch part; the appcast and the dmg are
+assets of the [latest release](../../releases/latest), which is what makes
+`releases/latest/download/appcast.xml` — the feed the app was built to ask —
+always resolve to the newest one.
+
+The app is signed with a self-signed identity rather than a Developer ID, so
+nothing about a downloaded dmg vouches for itself. What makes an update safe to
+install is that Sparkle refuses one whose **EdDSA signature** does not verify
+against the public key in the app's `Info.plist`. The private half lives in one
+login keychain and nowhere else — lose it and no future version can ever be
+offered to anything already installed.
+
+Publishing is one command:
+
+```sh
+./make-release.sh 1.1     # dmg, signature, appcast, tag, GitHub release
+```
 
 ## What moves, and why it had to be made to
 
@@ -323,6 +347,13 @@ since stderr is discarded for a bundled app:
 ```sh
 log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'
 ```
+
+The menu's strings are `Sources/BlackHoleApp/Resources/<lang>.lproj/Localizable.strings`,
+read through `Bundle.module` so they work under `swift run` too; `make-app.sh`
+mirrors them into `Contents/Resources` so macOS offers the app in its per-app
+language picker. There is no language setting in the app and there should not be
+— one would override the system's, which is the opposite of what a language
+preference is for.
 
 The one contract to keep: `struct Uniforms` in `BlackHole.metal` and
 `Sources/BlackHoleCore/Uniforms.swift` must stay identical. Both are all-float on
