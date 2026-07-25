@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bundle the renderer into a double-clickable "Black Hole.app" in macapp/dist.
+# Bundle the renderer into a double-clickable "Black Hole.app" in dist/.
 # (swift run works fine too — this is just for keeping it in the Dock.)
 set -e
 cd "$(dirname "$0")"
