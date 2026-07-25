@@ -93,7 +93,7 @@ Profiled with `sample` on the running widget (Medium, 840x840, `N_STEPS` 48, 60 
 
 ### Issue tracker
 
-Issues live as markdown files under `.scratch/<feature>/` in this repo — there is no git remote, so no `gh`/`glab`. See `docs/agents/issue-tracker.md`.
+Issues live in this repo's GitHub Issues, reached with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
