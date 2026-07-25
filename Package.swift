@@ -12,7 +12,9 @@ let package = Package(
         .executableTarget(
             name: "BlackHoleApp",
             path: "Sources/BlackHoleApp",
-            resources: [.copy("BlackHole.metal")]
+            resources: [.copy("BlackHole.metal"),
+                        .copy("AppIcon.icns"),
+                        .copy("MenuIcon.png")]
         )
     ]
 )

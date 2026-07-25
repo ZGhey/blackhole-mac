@@ -14,13 +14,27 @@ enum Shared {
 
 @main
 struct BlackHoleApp: App {
+    /// The menu-bar glyph, rendered from the same shader as everything else
+    /// (see `make-icon.sh`). A template image: only its alpha is used, and the
+    /// system paints it to match the menu bar, so it follows light and dark
+    /// without two assets. Shipped at 36 px and declared 18 pt, which is the
+    /// cheapest way to be crisp on both 1x and 2x.
+    static let menuIcon: NSImage = {
+        guard let url = Bundle.module.url(forResource: "MenuIcon", withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else { return NSImage(systemSymbolName: "circle.circle.fill", accessibilityDescription: nil)! }
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = true
+        return image
+    }()
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(params: Shared.params, model: Shared.model)
         } label: {
-            Image(systemName: "circle.circle.fill")
+            Image(nsImage: Self.menuIcon)
         }
     }
 }
@@ -152,8 +166,13 @@ final class AppModel: ObservableObject {
     }
     @Published var rendererError: String?
     /// Out of the way for a moment, without quitting and losing the position.
-    @Published var hidden = false {
-        didSet { onHiddenChange?() }
+    /// Persisted: hiding it and quitting only to have it come back on the next
+    /// launch is not "hidden", it is a joke with a delay on it.
+    @Published var hidden: Bool {
+        didSet {
+            UserDefaults.standard.set(hidden, forKey: "hidden")
+            onHiddenChange?()
+        }
     }
 
     /// Positions are kept per display. A widget parked in the corner of a
@@ -200,6 +219,7 @@ final class AppModel: ObservableObject {
     init() {
         let d = UserDefaults.standard
         frameRate = FrameRate(rawValue: d.object(forKey: "frameRate") as? Int ?? 0) ?? .fps60
+        hidden = d.bool(forKey: "hidden")
         size = d.object(forKey: "size") as? Double ?? WidgetSize.medium.points
         lens = LensSource(rawValue: d.string(forKey: "lens") ?? "") ?? .screen
         audioReactive = d.bool(forKey: "audioReactive")

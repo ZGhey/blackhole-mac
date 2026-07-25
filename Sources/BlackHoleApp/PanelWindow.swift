@@ -120,12 +120,15 @@ final class PanelController {
         model.originDisplay = panelScreen?.displayID
         p.alphaValue = model.hidden ? 0 : 1
         syncCaptureExclusion()
-        lensChanged()
         startPositionTimer()
         startHitTestTimer()
         observeScreenChanges(for: p)
         observeVisibility(for: p)
-        running = true
+        // A widget restored hidden must not come up holding a capture stream,
+        // so the capture is started by syncRunning rather than before it — an
+        // unconditional lensChanged() here raced its own stop() and won.
+        running = false
+        syncRunning(reason: "launch")
     }
 
     // ------------------------------------------------------------ capture --

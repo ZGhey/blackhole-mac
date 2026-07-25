@@ -15,6 +15,9 @@ cp .build/release/BlackHoleApp "$APP/Contents/MacOS/"
 # the bundle has to travel with the binary. Bundle.module finds it next to
 # Bundle.main.resourceURL.
 cp -R .build/release/BlackHoleApp_BlackHoleApp.bundle "$APP/Contents/Resources/"
+# The icon has to sit at Contents/Resources/AppIcon.icns for CFBundleIconFile;
+# inside the SwiftPM resource bundle is where the app finds it, not the Finder.
+cp Sources/BlackHoleApp/AppIcon.icns "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,6 +29,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleName</key>            <string>Black Hole</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>1.0</string>
+    <!-- LaunchServices and SMAppService (launch at login) both key off this. -->
+    <key>CFBundleVersion</key>         <string>1</string>
+    <key>CFBundleIconFile</key>        <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>  <string>13.0</string>
     <key>NSHighResolutionCapable</key> <true/>
     <!-- Lives on the desktop and in the menu bar; no Dock icon, no windows. -->
