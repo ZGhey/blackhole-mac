@@ -88,3 +88,17 @@ Ranges, groups, help text and defaults for each tunable live in `Sources/BlackHo
 Profiled with `sample` on the running widget (Medium, 840x840, `N_STEPS` 48, 60 fps), the main thread is ~93% idle in `mach_msg`. Of the ~7% that is work, `Renderer.draw` is 276 samples in 4599 and **115 of those are blocked in `nextDrawable`** — vsync pacing, not cost. The hit-test and position timers do not appear at all. Two consequences: dropping the frame rate saves about a point of CPU (10.3% to 9.2% going 60 to 30) and the GPU difference is below the noise floor; and the 60 Hz pointer poll is not worth optimising, whatever it looks like on paper.
 
 `N_STEPS` (geodesic integration steps per pixel) is the main GPU dial; only pixels inside the ray-traced circle around the hole pay it, and that circle scales with the hole — a large hole at high context fill on a high-DPI display is the worst case. `TOKEN_AREA_MAX` bounds how big it gets. In the app the widget is small enough that `N_STEPS` is the only dial that matters.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.scratch/<feature>/` in this repo — there is no git remote, so no `gh`/`glab`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
