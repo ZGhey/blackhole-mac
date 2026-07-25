@@ -31,6 +31,11 @@ Applications.
 The download is signed but **not notarized**, so the first launch needs
 right-click ▸ **Open** rather than a double-click. After that macOS remembers.
 
+**On Windows?** [BlackHoleTrash](https://github.com/rrrjqy66/BlackHoleTrash) is a
+separate project built on the same idea — a lensing black hole you can put on the
+desktop. It also doubles as a real Recycle Bin, which this one deliberately does
+not: here, dropping a file only feeds the animation.
+
 Requires **macOS 13 or later on Apple silicon**. There is no Dock icon and no
 main window: the app lives in the menu bar (⚫). The menu follows the system's
 language — English, Simplified Chinese, Traditional Chinese and Japanese.
