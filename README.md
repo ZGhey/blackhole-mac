@@ -1,32 +1,41 @@
-# Black Hole — a floating widget for macOS
+<div align="center">
+
+# Black Hole
+
+**A Schwarzschild black hole that sits on your desktop and bends the screen behind it.**
+
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-1c1c1e)](https://github.com/ZGhey/blackhole-mac/releases/latest)
+[![Apple silicon](https://img.shields.io/badge/Apple%20silicon-arm64-1c1c1e)](https://github.com/ZGhey/blackhole-mac/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/ZGhey/blackhole-mac?color=1c1c1e&label=release)](https://github.com/ZGhey/blackhole-mac/releases/latest)
+[![MIT](https://img.shields.io/badge/licence-MIT-1c1c1e)](LICENSE)
 
 **English** · [简体中文](README.zh-Hans.md)
 
-A Schwarzschild black hole as a native macOS app: Metal, one fullscreen
-triangle, one fragment shader. Every pixel near the hole integrates its own null
-geodesic through the Schwarzschild metric, and the shadow, lensing, photon ring,
-disk images and time dilation all fall out of that integration rather than being
-painted on.
+<img src="docs/demo.gif" width="380" alt="Each style in turn, over a real screen">
+
+</div>
+
+Metal, one fullscreen triangle, one fragment shader. Every pixel near the hole
+integrates its own null geodesic through the Schwarzschild metric, and the
+shadow, lensing, photon ring, disk images and time dilation all fall out of that
+integration rather than being painted on.
 
 It floats above your windows and **bends the live screen behind it**. Your
 editor, your browser, your Finder icons genuinely warp around the horizon.
 
-![Each style in turn, over a real screen](docs/demo.gif)
+## Install
 
-Download the latest **[`Black Hole.dmg`](../../releases/latest)**, or build it
-yourself:
-
-```sh
-./make-signing-cert.sh     # once — see "Permissions" below
-./make-app.sh && open "dist/Black Hole.app"
-```
-
-Requires macOS 13+ on Apple silicon. There is no Dock icon and no main window:
-the app lives in the menu bar (⚫). The menu is translated into Simplified
-Chinese, Traditional Chinese and Japanese, and follows the system's language.
+Download the latest **[`Black Hole.dmg`](../../releases/latest)** and drag it to
+Applications.
 
 The download is signed but **not notarized**, so the first launch needs
 right-click ▸ **Open** rather than a double-click. After that macOS remembers.
+
+Requires **macOS 13 or later on Apple silicon**. There is no Dock icon and no
+main window: the app lives in the menu bar (⚫). The menu follows the system's
+language — English, Simplified Chinese, Traditional Chinese and Japanese.
+
+To build it yourself instead, see [Building it](#building-it).
 
 ## Using it
 
@@ -42,8 +51,9 @@ The menu has two things in it, because two is what it needs:
 Everything else the widget does, it does without being asked:
 
 - **Drop something on it** — a file, a selection of text, a link, an image — and
-  watch it be eaten (below). **It touches nothing**: the animation is the whole
-  of it, and nothing is moved, copied or deleted.
+  watch it be eaten ([how, and why like that](#being-eaten)). **It touches
+  nothing**: the animation is the whole of it, and nothing is moved, copied or
+  deleted.
 - **Put the pointer inside** and its image is dragged toward the middle,
   stretched and reddened until it goes out. The real pointer is never touched;
   move back out and the image catches up.
@@ -55,7 +65,7 @@ And the rest of the menu is the things that are not settings:
 
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
   so it does nothing under `swift run BlackHoleApp`.
-- **Check for Updates…** — see below.
+- **Check for Updates…** — see [Updates](#updates).
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
   Anything you tune can be kept: Style ▸ **Save current as…**. Custom looks are
   stored whole rather than as a sparse patch, because a look you saved is the
@@ -75,47 +85,10 @@ And the rest of the menu is the things that are not settings:
   laptop screen has no business landing in the middle of a 5K one when you
   dock, and the reverse leaves it off the edge entirely.
 
-## One dial for the proportions
-
-The composition always fills the window, so the window *is* the visible disc —
-there is no dead border to catch on the edge of a screen. That leaves exactly
-one thing to decide: **`HALO`**, how much lensed background rings the disk, as a
-multiple of the disk's own radius. 1.0 is the warp hugging it exactly.
-
-Two earlier dials for this are gone, and it is worth saying why rather than
-quietly dropping them: they cancelled out. Working the algebra through,
-`rh = (room·B_CRIT/lit)·MAX/(halo·room)` — `room` divides out, and the same is
-true of the hole's own scale. All they ever changed was how much of the window
-the composition declined to use, which is to say they existed to create the dead
-border. Size belongs to the window; proportion belongs to `HALO`.
-
-The extent being fitted is what actually *glows*, not the disk's nominal outer
-edge: emission has faded out by `rout*0.70`, so measuring against `DISK_OUTER`
-hands roughly a third of the frame to disk that emits nothing.
-
-## The window is square; nothing else is
-
-An AppKit window is a rectangle, and its click region is all-or-nothing. Neither
-is true of what you see:
-
-- The shader tapers its output **radially**, so the warp is gone before the
-  border and the silhouette is a **soft-edged disc**. Without that the frame
-  slices through the halo — which runs several times wider than the widget — and
-  the clipped band is an opaque, capture-stale copy of your screen that lags
-  visibly over anything moving underneath.
-- Alpha rides the same taper, so the captured copy **crossfades** into the real
-  screen instead of ending on a visible rim.
-- The **click region follows the disc**: the corners are not there, and a click
-  in them lands on whatever is underneath. The controller polls the pointer and
-  flips `ignoresMouseEvents` to match.
-
-Everything the hole does not deflect comes out at alpha 0, so the untouched
-parts of the widget are not a copy of the screen — they *are* the screen.
-
 ## Permissions
 
 **Screen Recording** is needed for the live-screen lens. Grant it when macOS
-asks.
+asks. Nothing else is requested — not Accessibility, not input monitoring.
 
 It is worth knowing why the build signs itself. macOS keys a TCC grant to the
 app's *designated requirement*, and an ad-hoc signature produces one built from
@@ -157,13 +130,49 @@ against the public key in the app's `Info.plist`. The private half lives in one
 login keychain and nowhere else — lose it and no future version can ever be
 offered to anything already installed.
 
-Publishing is one command:
+## How it works
 
-```sh
-./make-release.sh 1.1     # dmg, signature, appcast, tag, GitHub release
-```
+Everything below is why the picture looks the way it does. None of it is needed
+to use the app.
 
-## What moves, and why it had to be made to
+### Proportions: one dial
+
+The composition always fills the window, so the window *is* the visible disc —
+there is no dead border to catch on the edge of a screen. That leaves exactly
+one thing to decide: **`HALO`**, how much lensed background rings the disk, as a
+multiple of the disk's own radius. 1.0 is the warp hugging it exactly.
+
+Two earlier dials for this are gone, and it is worth saying why rather than
+quietly dropping them: they cancelled out. Working the algebra through,
+`rh = (room·B_CRIT/lit)·MAX/(halo·room)` — `room` divides out, and the same is
+true of the hole's own scale. All they ever changed was how much of the window
+the composition declined to use, which is to say they existed to create the dead
+border. Size belongs to the window; proportion belongs to `HALO`.
+
+The extent being fitted is what actually *glows*, not the disk's nominal outer
+edge: emission has faded out by `rout*0.70`, so measuring against `DISK_OUTER`
+hands roughly a third of the frame to disk that emits nothing.
+
+### The window is square; nothing else is
+
+An AppKit window is a rectangle, and its click region is all-or-nothing. Neither
+is true of what you see:
+
+- The shader tapers its output **radially**, so the warp is gone before the
+  border and the silhouette is a **soft-edged disc**. Without that the frame
+  slices through the halo — which runs several times wider than the widget — and
+  the clipped band is an opaque, capture-stale copy of your screen that lags
+  visibly over anything moving underneath.
+- Alpha rides the same taper, so the captured copy **crossfades** into the real
+  screen instead of ending on a visible rim.
+- The **click region follows the disc**: the corners are not there, and a click
+  in them lands on whatever is underneath. The controller polls the pointer and
+  flips `ignoresMouseEvents` to match.
+
+Everything the hole does not deflect comes out at alpha 0, so the untouched
+parts of the widget are not a copy of the screen — they *are* the screen.
+
+### What makes it move
 
 The lensed halo is a *static mapping* of whatever is behind the widget. Point it
 at a still screen and, left alone, not one pixel outside the disk changes —
@@ -172,8 +181,8 @@ its own; it only moves when the warp field does.
 
 So the hole drifts. `DRIFT` walks it on a Lissajous path — two incommensurate
 sines per axis, so it never repeats — just small enough that a dropped file
-still lands where you aimed. That alone took the halo from 0.25 to 13.5 per second, and the outermost
-ring from exactly zero to 3.0.
+still lands where you aimed. That alone took the halo from 0.25 to 13.5 per
+second, and the outermost ring from exactly zero to 3.0.
 
 Inside the disk, an **orbiting hot spot** does the rest. The streak field only
 pushes a noise phase, which the eye cannot follow; a discrete feature it can.
@@ -182,7 +191,7 @@ infrared flares — GRAVITY watched the centroid of one go round — and this on
 lensed like everything else, so its far-side image arcs over the shadow half an
 orbit out of step with itself.
 
-## Being eaten
+### Being eaten
 
 A dropped file does not simply shrink and fade. Five things happen to it, and
 each one is something that happens to real matter falling into a real hole.
@@ -208,9 +217,9 @@ thing used to be.
 from a bruise into a ring, and decays over about ten seconds. A real tidal
 disruption flare runs for months; this is the same shape at a watchable rate.
 
-Two consequences worth having. Dropping a file now leaves something behind for
-ten seconds instead of nothing after two — drop a handful and you can see the
-thing being fed. And it answers a question nobody thinks to ask but everybody
+Two consequences worth having. Dropping a file leaves something behind for ten
+seconds instead of nothing after two — drop a handful and you can see the thing
+being fed. And it answers a question nobody thinks to ask but everybody
 understands on sight: where the disk came from.
 
 The object is drawn **in front of** the hole, not on the sky plane behind it.
@@ -219,17 +228,17 @@ whole descent happened out of sight, and light from something falling in on the
 viewer's side reaches the eye directly — there is nothing in between to bend it.
 What happens to it is tidal, not optical.
 
-## Why the disk's rotation is a phase, not a speed
+### Rotation is a phase, not a speed
 
 The shader is handed an already-integrated `diskPhase` rather than a rate it
 multiplies by time. Anything that modulates how fast the disk turns — a flare, a
 bass note — would otherwise jump every streak at once the moment it changed,
-because `time` is large by then and scaling it moves the whole pattern. Integrating on the CPU makes the rate
-free to vary with no visible seam.
+because `time` is large by then and scaling it moves the whole pattern.
+Integrating on the CPU makes the rate free to vary with no visible seam.
 
 The flare leans on **temperature** more than gain: extra gain mostly clips.
 
-## Tonemapping, the photon ring, and the glow
+### Tonemapping, the photon ring, and the glow
 
 `1 − exp(−c)` applied per channel is why everything used to go white. The moment
 red clips, an amber disk with every filament in it becomes a flat white blob —
@@ -252,7 +261,7 @@ without inventing anything.
 **Nothing may clip to white.** This is the single failure mode the render keeps
 finding new ways to reach, and every instance of it has the same shape — some
 quantity added to another until a channel saturates, taking the hue and every
-bit of structure with it. Three separate fixes, all worth keeping:
+bit of structure with it. Four separate fixes, all worth keeping:
 
 - The tonemap maps *intensity* and carries the chroma through, instead of
   running `1 − exp(−c)` per channel. The bleach that remains starts an order of
@@ -304,7 +313,7 @@ well as add colour: the widget's output is premultiplied, so light spilling past
 the disk would otherwise be multiplied away against a transparent background and
 never appear. Setting `BLOOM` to 0 skips the whole chain.
 
-## What it stops doing when asked
+### What it stops doing when asked
 
 **Reduce Motion** stops the widget travelling. The disk still turns — that is
 what it is, not incidental movement — but the wandering ends. An ornament that
@@ -327,7 +336,24 @@ and `N_STEPS` 48; a widget-sized panel is a small fraction of that. `N_STEPS` in
 Advanced is the dial if you need one. Pixels past the silhouette take an early
 exit, and the starfield costs nothing while `STAR_GAIN` is 0.
 
-## Working on it
+## Building it
+
+Swift 5.9 and the macOS SDK — Xcode or the command line tools — and nothing
+else; every dependency comes from SwiftPM.
+
+```sh
+./make-signing-cert.sh                    # once, so TCC grants survive rebuilds
+./make-app.sh && open "dist/Black Hole.app"
+```
+
+| Script | What it does |
+| --- | --- |
+| `make-app.sh` | Builds `dist/Black Hole.app`, signed |
+| `make-dmg.sh` | Wraps that in a drag-to-install dmg |
+| `make-release.sh 1.2` | dmg, EdDSA signature, appcast, tag, GitHub release |
+| `make-check.sh` | The measurements below — run it after touching the shader |
+| `make-icon.sh` | Regenerates the app and menu-bar icons from the renderer |
+| `make-demo.sh` | Regenerates `docs/demo.gif` from a screenshot you supply |
 
 `Sources/BlackHoleApp/BlackHole.metal` is compiled at launch (~200 ms), not at
 build time — SwiftPM has no `.metal` build rule for an executable target. That
@@ -346,20 +372,25 @@ since stderr is discarded for a bundled app:
 log stream --predicate 'subsystem == "dev.zghey.blackhole"'
 ```
 
+There is nothing to unit-test in a fragment shader, but there is plenty to
+measure, and `make-check.sh` measures it: that the two `Uniforms` declarations
+still agree field for field, that no style clips itself into the top of the
+range, that the streak pattern does not keep getting finer with uptime, and that
+the lensed background holds up against a 4× supersampled reference. Every one of
+them corresponds to a bug that shipped.
+
+The one contract to keep: `struct Uniforms` in `BlackHole.metal` and
+`Sources/BlackHoleCore/Uniforms.swift` must stay identical. Both are all-float on
+purpose — every member is 4-byte aligned, so declaration order *is* the memory
+layout and the two cannot silently disagree. Append in groups of four, shrink the
+pads, never reorder.
+
 The menu's strings are `Sources/BlackHoleApp/Resources/<lang>.lproj/Localizable.strings`,
 read through `Bundle.module` so they work under `swift run` too; `make-app.sh`
 mirrors them into `Contents/Resources` so macOS offers the app in its per-app
 language picker. There is no language setting in the app and there should not be
 — one would override the system's, which is the opposite of what a language
 preference is for.
-
-The one contract to keep: `struct Uniforms` in `BlackHole.metal` and
-`Sources/BlackHoleCore/Uniforms.swift` must stay identical. Both are all-float on
-purpose — every member is 4-byte aligned, so declaration order *is* the memory
-layout and the two cannot silently disagree. Append in groups of four, shrink the
-pads, never reorder. `./make-check.sh` compares the two field for field, so a
-reorder fails rather than quietly feeding every later field to the wrong
-parameter.
 
 ## Licence
 
