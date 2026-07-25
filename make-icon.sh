@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-swift Tools/render-icon.swift Sources/BlackHoleApp/BlackHole.metal "$TMP"
+swift run render-icon Sources/BlackHoleApp/BlackHole.metal "$TMP"
 iconutil -c icns "$TMP/AppIcon.iconset" -o Sources/BlackHoleApp/AppIcon.icns
 cp "$TMP/MenuIcon.png" Sources/BlackHoleApp/MenuIcon.png
 

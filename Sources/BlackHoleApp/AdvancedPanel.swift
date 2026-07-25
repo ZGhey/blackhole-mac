@@ -1,3 +1,4 @@
+import BlackHoleCore
 import AppKit
 import SwiftUI
 

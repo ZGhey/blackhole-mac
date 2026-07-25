@@ -1,3 +1,4 @@
+import BlackHoleCore
 import Foundation
 import Metal
 import MetalKit
@@ -174,13 +175,17 @@ final class Renderer: NSObject, MTKViewDelegate {
         // Flares and audio modulate how fast the disk turns, so the phase is
         // integrated here rather than derived from `time` in the shader — a
         // rate change applied to a large `time` would jump every streak at once.
-        let (flare, audio, hover, reduceMotion, lowPower) = MainActor.assumeIsolated {
-            () -> (Float, Float, Float, Bool, Bool) in
+        let (flare, audio, hover, reduceMotion, steps) = MainActor.assumeIsolated {
+            () -> (Float, Float, Float, Bool, Float) in
             Proximity.shared.step(shadowRadius: Float(params.shadowRadiusFraction()))
             return (Impacts.shared.level(),
                     ScreenCapture.shared.capturesAudio ? ScreenCapture.shared.audioLevel : 0,
                     Proximity.shared.hover,
-                    SystemState.shared.reduceMotion, SystemState.shared.lowPower)
+                    SystemState.shared.reduceMotion,
+                    // Low Power is a system policy and SystemState owns all of
+                    // it — the frame rate and the step count alike. The renderer
+                    // is handed the number, not the condition.
+                    SystemState.shared.steps(preferred: Float(params["N_STEPS"])))
         }
         let rate = Float(abs(params["DISK_SPEED"]) * params["DISK_RATE"])
         diskPhase += Float(dt) * rate * (1 + 1.2 * flare + 0.5 * audio)
@@ -238,8 +243,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         // One slot on the sky plane, two things that can occupy it: a dropped
         // file, or the pointer's own image. A drop wins — it is a deliberate
         // act, and it finishes in a couple of seconds.
-        let (fallCentre, fallSize, fallAlpha, fallTear, fallTexture) = MainActor.assumeIsolated {
-            () -> (SIMD2<Float>, Float, Float, Float, MTLTexture?) in
+        let (sprite, fallTexture) = MainActor.assumeIsolated {
+            () -> (Sprite?, MTLTexture?) in
             if Faller.shared.step(shadowRadius: Float(params.shadowRadiusFraction())) {
                 Impacts.shared.strike()
             }
@@ -258,37 +263,26 @@ final class Renderer: NSObject, MTKViewDelegate {
                                        colour: Faller.shared.colour)
             }
             if let dropped = Faller.shared.texture, Faller.shared.alpha > 0.01 {
-                return (Faller.shared.centre, Faller.shared.size, Faller.shared.alpha,
-                        Faller.shared.tear, dropped)
+                return (Sprite(centre: Faller.shared.centre, size: Faller.shared.size,
+                               alpha: Faller.shared.alpha, tear: Faller.shared.tear), dropped)
             }
             if let ghost = Proximity.shared.ghostTexture {
-                return (Proximity.shared.ghost, Proximity.shared.ghostSize,
-                        Proximity.shared.ghostAlpha, Proximity.shared.ghostTear, ghost)
+                return (Sprite(centre: Proximity.shared.ghost, size: Proximity.shared.ghostSize,
+                               alpha: Proximity.shared.ghostAlpha, tear: Proximity.shared.ghostTear),
+                        ghost)
             }
-            return (SIMD2<Float>(0.5, 0.5), 0, 0, 0, nil)
+            return (nil, nil)
         }
 
-        var u = params.uniforms(time: time, diskPhase: diskPhase,
-                                width: max(w, 1), height: max(h, 1),
-                                bgFit: fit, skyAlpha: hasSky ? 1 : 0,
-                                flare: flare, audio: audio, drift: drift)
-        // The sources work relative to the widget's centre; the hole is off
-        // there by the drift, and the overlay is polar around the hole.
-        let aspect = max(w, 1) / max(h, 1)
-        u.fallX = (fallCentre.x - 0.5 - drift.x) * aspect
-        u.fallY = (fallCentre.y - 0.5 - drift.y)
-        u.fallSize = fallSize
-        u.fallAlpha = fallAlpha
-        u.hover = hover
-        u.fallTear = fallTear
         let fed = MainActor.assumeIsolated { Impacts.shared.feed() }
-        u.feedAngle = fed.angle
-        u.feedStrength = fed.strength
-        u.feedR = fed.colour.x
-        u.feedG = fed.colour.y
-        u.feedB = fed.colour.z
-        u.plunge = Float(params["PLUNGE"])
-        if lowPower { u.nSteps = max(u.nSteps * 0.6, 12) }
+        let inputs = FrameInputs(
+            time: time, diskPhase: diskPhase, width: w, height: h,
+            bgFit: fit, skyAlpha: hasSky ? 1 : 0,
+            flare: flare, audio: audio, hover: hover, drift: drift,
+            nSteps: steps,
+            sprite: sprite,
+            feed: Feed(angle: fed.angle, strength: fed.strength, colour: fed.colour))
+        var u = FrameUniforms.make(params.tunables, inputs)
 
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)

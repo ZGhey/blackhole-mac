@@ -51,7 +51,7 @@ Everything is in the menu-bar menu.
   toward the middle, stretched and reddened until it goes out. The real pointer
   is never touched; move back out and the image catches up.
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
-  so it does nothing under `swift run`.
+  so it does nothing under `swift run BlackHoleApp`.
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
   Anything you tune can be kept: Style ▸ **Save current as…**. Custom looks are
   stored whole rather than as a sparse patch, because a look you saved is the
@@ -313,7 +313,7 @@ turns out to be the better trade: point `BLACKHOLE_METAL` at a working copy and
 a relaunch is the whole edit loop.
 
 ```sh
-BLACKHOLE_METAL=$PWD/Sources/BlackHoleApp/BlackHole.metal swift run
+BLACKHOLE_METAL=$PWD/Sources/BlackHoleApp/BlackHole.metal swift run BlackHoleApp
 ```
 
 A compile error shows up in **Advanced…** with the Metal compiler's own message,
@@ -325,10 +325,12 @@ log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'
 ```
 
 The one contract to keep: `struct Uniforms` in `BlackHole.metal` and
-`Uniforms.swift` must stay identical. Both are all-float on purpose — every
-member is 4-byte aligned, so declaration order *is* the memory layout and the
-two cannot silently disagree. Append in groups of four, shrink the pads, never
-reorder.
+`Sources/BlackHoleCore/Uniforms.swift` must stay identical. Both are all-float on
+purpose — every member is 4-byte aligned, so declaration order *is* the memory
+layout and the two cannot silently disagree. Append in groups of four, shrink the
+pads, never reorder. `./make-check.sh` compares the two field for field, so a
+reorder fails rather than quietly feeding every later field to the wrong
+parameter.
 
 ## Differences from the Ghostty shader
 

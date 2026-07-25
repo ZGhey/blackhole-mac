@@ -1,11 +1,17 @@
-// Three measurements, each of which corresponds to a bug that shipped.
+// Four checks, each of which corresponds to a bug that shipped.
 //
-//   swift Tools/check-render.swift Sources/BlackHoleApp/BlackHole.metal
+//   swift run check-render Sources/BlackHoleApp/BlackHole.metal
 //
 // There is nothing to unit-test in a fragment shader, but there is plenty to
-// measure. These are the checks that would have caught the three worst things
-// this renderer has done, kept because each one was found the hard way:
+// measure. These are the checks that would have caught the worst things this
+// renderer has done, kept because each one was found the hard way:
 //
+//   contract   The Uniforms struct is all-float so that declaration order is
+//              the memory layout — which means a reorder on one side feeds
+//              every field after it to the wrong parameter, silently, and no
+//              size check notices. Swift's declaration is read back with
+//              Mirror and compared, in order, against the struct parsed out of
+//              the shader.
 //   winding    The gas at the inner edge orbits far faster than at the outer
 //              edge, so any pattern painted on it winds into an ever-tighter
 //              spiral. Left unbounded the filaments went below the pixel grid
@@ -22,20 +28,24 @@
 //              aliased into crawling moiré. This compares against a 4x
 //              supersampled reference.
 //
+// The styles come from Specs.styles, so a style added to the app is measured
+// here without anyone having to remember it.
+//
 // Prints numbers and exits non-zero if any of them has drifted. The thresholds
 // are set well clear of the values as they stand, not at them — this is a trip
 // wire, not a golden image.
 import AppKit
+import BlackHoleCore
 import Metal
 
 let shaderPath = CommandLine.arguments.count > 1
     ? CommandLine.arguments[1] : "Sources/BlackHoleApp/BlackHole.metal"
 let S = 600, TW = 1024
 
+let shaderSource = try String(contentsOfFile: shaderPath, encoding: .utf8)
 let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
-let library = try device.makeLibrary(source: String(contentsOfFile: shaderPath, encoding: .utf8),
-                                     options: nil)
+let library = try device.makeLibrary(source: shaderSource, options: nil)
 let pd = MTLRenderPipelineDescriptor()
 pd.vertexFunction = library.makeFunction(name: "blackholeVertex")!
 pd.fragmentFunction = library.makeFunction(name: "blackholeFragment")!
@@ -91,41 +101,20 @@ let blank: MTLTexture = {
     return device.makeTexture(descriptor: d)!
 }()
 
-struct Style { let name: String; let p: [Float] }
-// temp, incl, roll, inner, outer, opacity, dopp, beam, gain, contrast, wind, speed, exposure
-let styles = [
-    Style(name: "Inferno",       p: [5500, 1.50, 0.35, 1.8, 8, 0.90, 0.6, 2.5, 2.2, 1.6, 7, 5, 1.4]),
-    Style(name: "Gargantua",     p: [4500, 1.52, 0.10, 2.2, 7, 0.85, 0.35, 2.0, 1.4, 0.5, 7, 5, 1.2]),
-    Style(name: "M87* donut",    p: [3800, 0.55, -0.30, 2.2, 6, 0.45, 0.9, 3.5, 1.6, 0.4, 3, 2.5, 1.1]),
-    Style(name: "Face-on ember", p: [6500, 0.30, 0.00, 3.0, 10, 0.5, 0.8, 2.5, 1.0, 1.1, 7, 5, 1.0]),
-    Style(name: "Quasar",        p: [15000, 1.30, 0.35, 3.0, 14, 0.35, 1.0, 4.0, 1.2, 1.3, 8, 5, 0.8]),
-]
+/// Through the same assembler the app uses. This was fifty-two floats in a
+/// literal array, in declaration order, typed out by hand.
+func render(_ t: Tunables, phase: Float, size: Int, bg: MTLTexture, cover: Int) -> [UInt8] {
+    let fit = BackgroundFit(scaleX: Float(cover) / Float(TW), scaleY: Float(cover) / Float(TW),
+                            offX: 0.1, offY: 0.1)
+    var u = FrameUniforms.make(t, .offscreen(t, size: size, phase: phase, bgFit: fit))
 
-func render(_ st: Style, phase: Float, size: Int, bg: MTLTexture, cover: Int,
-            bgBlur: Float = 1.5) -> [UInt8] {
-    let p = st.p
-    var u: [Float] = [
-        3.0, Float(size), Float(size), 1.25,
-        13, 2.0, 0, phase,
-        p[3], p[4], p[1], p[2],
-        p[8], p[5], p[0], p[6],
-        p[7], p[11], p[10], p[9],
-        p[12], 0, 48, 1,
-        Float(cover) / Float(TW), Float(cover) / Float(TW), 0.1, 0.1,
-        1, 0, 1.8, 2.4,
-        0, 0, 1, 1.2,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        1, 1, 1, 0.55,
-        bgBlur, 26, 0, 0,
-    ]
     let od = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
                                                       width: size, height: size, mipmapped: false)
     od.usage = [.renderTarget, .shaderRead]; od.storageMode = .shared
     let out = device.makeTexture(descriptor: od)!, emission = device.makeTexture(descriptor: od)!
     let rp = MTLRenderPassDescriptor()
-    for (i, t) in [out, emission].enumerated() {
-        rp.colorAttachments[i].texture = t
+    for (i, target) in [out, emission].enumerated() {
+        rp.colorAttachments[i].texture = target
         rp.colorAttachments[i].loadAction = .clear
         rp.colorAttachments[i].storeAction = .store
         rp.colorAttachments[i].clearColor = MTLClearColorMake(0, 0, 0, 0)
@@ -133,7 +122,7 @@ func render(_ st: Style, phase: Float, size: Int, bg: MTLTexture, cover: Int,
     let cb = queue.makeCommandBuffer()!
     let e = cb.makeRenderCommandEncoder(descriptor: rp)!
     e.setRenderPipelineState(pipeline)
-    e.setFragmentBytes(&u, length: MemoryLayout<Float>.stride * u.count, index: 0)
+    e.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
     e.setFragmentTexture(bg, index: 0)
     e.setFragmentTexture(blank, index: 1)
     e.setFragmentSamplerState(sampler, index: 0)
@@ -201,17 +190,40 @@ func check(_ name: String, _ value: Double, _ limit: Double, over: Bool, _ note:
     if bad { failures.append("\(name): \(String(format: "%.2f", value)) vs \(limit) — \(note)") }
 }
 
-print("winding — the streak pattern must not keep getting finer with uptime")
-for st in styles {
-    let young = fineness(render(st, phase: 2, size: S, bg: darkBG, cover: S), S)
-    let old   = fineness(render(st, phase: 6300, size: S, bg: darkBG, cover: S), S)   // 1 h
-    check("\(st.name): 1 h / launch", old / max(young, 0.01), 1.6, over: true,
+func pad(_ s: String, _ n: Int) -> String {
+    s.count >= n ? s : s + String(repeating: " ", count: n - s.count)
+}
+
+print("contract — the two Uniforms declarations must agree, field for field")
+do {
+    let counts = UniformContract.fieldCounts(metalSource: shaderSource)
+    let sameCount = counts.swift == counts.metal && counts.metal > 0
+    print("  \(pad("field count", 34)) \(pad("\(counts.swift) vs \(counts.metal)", 9))  \(sameCount ? "ok" : "FAIL")")
+    if !sameCount {
+        failures.append("field count: Uniforms.swift has \(counts.swift), BlackHole.metal has \(counts.metal)")
+    }
+    let mismatches = UniformContract.check(metalSource: shaderSource)
+    print("  \(pad("order + names", 34)) \(pad(mismatches.isEmpty ? "identical" : "differ", 9))  \(mismatches.isEmpty ? "ok" : "FAIL")")
+    for m in mismatches.prefix(8) { print("      \(m.describe)") }
+    if !mismatches.isEmpty {
+        failures.append("order + names: \(mismatches.count) position(s) disagree — the struct must never be reordered")
+    }
+}
+
+print("\nwinding — the streak pattern must not keep getting finer with uptime")
+for (name, patch) in Specs.styles {
+    let t = Tunables().applying(patch)
+    let young = fineness(render(t, phase: 2, size: S, bg: darkBG, cover: S), S)
+    let old   = fineness(render(t, phase: 6300, size: S, bg: darkBG, cover: S), S)   // 1 h
+    check("\(name): 1 h / launch", old / max(young, 0.01), 1.6, over: true,
           "the pattern is winding itself below the pixel grid; see DISK_REFRESH")
 }
 
 print("\nclipping — no style may jam itself into the top of the range")
-for st in styles {
-    check("\(st.name): % of disk above 235", clipped(render(st, phase: 2, size: S, bg: darkBG, cover: S), S),
+for (name, patch) in Specs.styles {
+    let t = Tunables().applying(patch)
+    check("\(name): % of disk above 235",
+          clipped(render(t, phase: 2, size: S, bg: darkBG, cover: S), S),
           9.0, over: true, "check BLOOM_THRESHOLD against the disk's own brightness")
 }
 
@@ -220,9 +232,10 @@ do {
     // BG_BLUR off on both sides. It softens the lensed background on purpose,
     // and it does so by *more* at 4x (the mip index moves with texel density),
     // so leaving it on would measure the deliberate blur rather than aliasing.
-    let native = render(styles[0], phase: 2, size: S, bg: textBG, cover: S, bgBlur: 0)
-    let reference = box(render(styles[0], phase: 2, size: S * 4, bg: textBG, cover: S, bgBlur: 0),
-                        S * 4, 4)
+    var t = Tunables().applying(Specs.styles[0].1)
+    t["BG_BLUR"] = 0
+    let native = render(t, phase: 2, size: S, bg: textBG, cover: S)
+    let reference = box(render(t, phase: 2, size: S * 4, bg: textBG, cover: S), S * 4, 4)
     var sum = 0.0; var n = 0
     let c = Double(S) / 2, rad = Double(S) * 0.47
     for y in 0..<S {

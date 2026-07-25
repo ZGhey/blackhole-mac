@@ -13,20 +13,30 @@ Menu-bar-only (`.accessory` policy, `LSUIElement`), one `NSPanel` that lenses th
 ## Commands
 
 ```sh
-swift run                  # run it
+swift run BlackHoleApp     # run it — the package has three executables now, so it needs the name
 ./make-signing-cert.sh     # once: stable identity so TCC grants survive rebuilds
 ./make-app.sh              # bundle dist/Black Hole.app
 ./make-icon.sh             # regenerate the icons from the renderer (rarely)
 xcrun -sdk macosx metal -c Sources/BlackHoleApp/BlackHole.metal -o /tmp/bh.air   # syntax-check the shader
 ```
 
-There is no linter, and `./make-check.sh` is what passes for a test suite: three offscreen measurements, each of which corresponds to a bug that actually shipped — the streak field winding itself below the pixel grid with uptime, a style clipping to white, and the lensed background aliasing. Run it after touching the shader. Verification here is measurement: render offscreen and count. Always run the bundled binary under `MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1` after touching render targets — it has caught two bugs that were invisible in rendered frames.
+There is no linter, and `./make-check.sh` is what passes for a test suite: one contract check plus three offscreen measurements, each of the latter corresponding to a bug that actually shipped — the streak field winding itself below the pixel grid with uptime, a style clipping to white, and the lensed background aliasing. Run it after touching the shader. Verification here is measurement: render offscreen and count. Always run the bundled binary under `MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1` after touching render targets — it has caught two bugs that were invisible in rendered frames.
+
+## Targets
+
+`BlackHoleCore` holds everything either side of the CPU→GPU seam has to agree on — the `Uniforms` struct, `Tunables`, `Specs`, `BackgroundFit`, and `FrameUniforms.make`, which is the only thing that fills a `Uniforms` in. Foundation only, so the two offscreen tools (`check-render`, `render-icon`) link it without dragging SwiftUI or AppKit behind them. That is the point of the split: the tools used to retype the uniform struct as a positional `[Float]` array each, which nothing checked.
+
+`Params` in the app is the `ObservableObject` shell over a `Tunables`; the values themselves know nothing about publishing.
 
 ## The uniform struct
 
-`struct Uniforms` in `BlackHole.metal` and `Uniforms.swift` must stay identical. Both are all-`Float` on purpose — every member is 4-byte aligned, so declaration order *is* the memory layout. Append in groups of four, shrink the pads, never reorder.
+`struct Uniforms` in `BlackHole.metal` and `Sources/BlackHoleCore/Uniforms.swift` must stay identical. Both are all-`Float` on purpose — every member is 4-byte aligned, so declaration order *is* the memory layout. Append in groups of four, shrink the pads, never reorder.
 
-Ranges, groups, help text and defaults for each tunable live in `Params.swift`. A tunable with no spec still works but should get one.
+This is no longer only a rule: `make-check.sh` reads the Swift declaration back with `Mirror`, parses the struct out of the shader, and compares them field for field. A reorder fails the check, which a size comparison could never catch.
+
+Members are `public internal(set)`, so nothing outside `BlackHoleCore` can fill one in by hand. Half-filling a `Uniforms` at the call site is what put 37 fields in `Params` and the other 11 in `Renderer.draw`.
+
+Ranges, groups, help text and defaults for each tunable live in `Sources/BlackHoleCore/Specs.swift`. A tunable with no spec still works but should get one. `check-render` measures every entry in `Specs.styles`, so a new style is covered without anyone having to remember it.
 
 ## Gotchas
 
@@ -71,7 +81,7 @@ Ranges, groups, help text and defaults for each tunable live in `Params.swift`. 
 
 ## Icons
 
-`./make-icon.sh` regenerates `AppIcon.icns` and the menu-bar `MenuIcon.png` by running `Tools/render-icon.swift`, which drives `BlackHole.metal` offscreen. There is no icon art in the repo and there does not need to be — the thing the app draws is the thing the icon should be. Results are committed; only rerun it when the look changes. The app icon sits on a dark rounded plate because that is what a macOS icon is, and the composition is drawn *inside* the plate (overflowing it clipped the disk against the corner the roll throws it toward). The menu-bar image is the render's own luminance used as alpha, marked `isTemplate` so the system tints it for light and dark, shipped at 36 px and declared 18 pt.
+`./make-icon.sh` regenerates `AppIcon.icns` and the menu-bar `MenuIcon.png` by running `swift run render-icon`, which drives `BlackHole.metal` offscreen through the same `FrameUniforms.make` the app uses. The icon's eight deliberate departures from Inferno are named in `iconTunables`. There is no icon art in the repo and there does not need to be — the thing the app draws is the thing the icon should be. Results are committed; only rerun it when the look changes. The app icon sits on a dark rounded plate because that is what a macOS icon is, and the composition is drawn *inside* the plate (overflowing it clipped the disk against the corner the roll throws it toward). The menu-bar image is the render's own luminance used as alpha, marked `isTemplate` so the system tints it for light and dark, shipped at 36 px and declared 18 pt.
 
 ## Performance
 

@@ -5,12 +5,13 @@
 // offscreen and writes the PNGs that make-icon.sh turns into AppIcon.icns and
 // the menu-bar template.
 //
-//   swift Tools/render-icon.swift <BlackHole.metal> <outdir>
+//   swift run render-icon <BlackHole.metal> <outdir>
 //
 // The app icon gets a dark rounded square behind it, because that is what a
 // macOS icon is; the menu-bar image is the render's own luminance used as an
 // alpha mask, marked as a template so the system tints it.
 import AppKit
+import BlackHoleCore
 import Metal
 
 let shaderPath = CommandLine.arguments[1]
@@ -54,29 +55,33 @@ let sampler: MTLSamplerState = {
     return device.makeSamplerState(descriptor: d)!
 }()
 
-/// The Inferno preset, with the hole opened up and the starfield turned on —
-/// at 16 pt a widget-proportioned composition is a grey smudge, so the icon
-/// trades halo for ring. `skyAlpha` 0 keeps the corners transparent.
-func uniforms(size: Int, halo: Float, stars: Float) -> [Float] {
-    [
-        6.0, Float(size), Float(size), halo,
-        13, 2.0, stars, 6.0,
-        1.8, 8, 1.30, 0.35,
-        2.4, 0.9, 5500, 0.6,
-        2.5, 5, 7, 1.7,
-        1.5, 0, 96, 1,
-        1, 1, 0, 0,
-        /*skyAlpha*/ 0, 0, 1.6, 2.4,
-        0, 0, 1, 1.6,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        1, 1, 1, 0.55,
-        0, 26, 0, 0,
-    ]
+/// The Inferno style, adjusted for an icon: the hole opened up, the starfield
+/// turned on and the ring pushed forward. At 16 pt a widget-proportioned
+/// composition is a grey smudge, so the icon trades halo for ring.
+///
+/// These used to be eight anonymous numbers inside a fifty-two-float literal.
+/// They are deliberate departures from the shipped look and are worth being
+/// able to see as such.
+func iconTunables(halo: Float, stars: Float) -> Tunables {
+    let inferno = Specs.styles.first { $0.0 == "Inferno" }?.1 ?? [:]
+    var t = Tunables().applying(inferno)
+    t["HALO"]          = Double(halo)
+    t["STAR_GAIN"]     = Double(stars)   // the icon has no screen behind it
+    t["DISK_INCL"]     = 1.30            // less edge-on than the widget's 1.50
+    t["DISK_GAIN"]     = 2.4             // brighter, to survive being shrunk
+    t["DISK_CONTRAST"] = 1.7
+    t["EXPOSURE"]      = 1.5
+    t["SPOT_GAIN"]     = 1.6
+    t["RING_GAIN"]     = 1.6             // the ring is what still reads at 16 px
+    t["N_STEPS"]       = 96              // no frame budget here; buy the accuracy
+    t["BG_BLUR"]       = 0               // nothing behind it to soften
+    return t
 }
 
 func render(size: Int, halo: Float, stars: Float) -> [UInt8] {
-    var u = uniforms(size: size, halo: halo, stars: stars)
+    let t = iconTunables(halo: halo, stars: stars)
+    // skyAlpha 0 keeps the corners transparent — there is no screen to cover.
+    var u = FrameUniforms.make(t, .offscreen(t, size: size, phase: 6, time: 6, skyAlpha: 0))
     let od = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
                                                       width: size, height: size, mipmapped: false)
     od.usage = [.renderTarget, .shaderRead]
@@ -93,7 +98,7 @@ func render(size: Int, halo: Float, stars: Float) -> [UInt8] {
     let cb = queue.makeCommandBuffer()!
     let e = cb.makeRenderCommandEncoder(descriptor: rp)!
     e.setRenderPipelineState(pipeline)
-    e.setFragmentBytes(&u, length: MemoryLayout<Float>.stride * u.count, index: 0)
+    e.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
     e.setFragmentTexture(blank, index: 0)
     e.setFragmentTexture(blank, index: 1)
     e.setFragmentSamplerState(sampler, index: 0)
