@@ -4,6 +4,13 @@ import PackageDescription
 let package = Package(
     name: "BlackHoleApp",
     platforms: [.macOS(.v13)],
+    dependencies: [
+        // Sparkle does the part that is easy to get wrong: verifying what was
+        // downloaded before it replaces a running app. That signature check is
+        // the only thing standing between the update channel and anyone who can
+        // put a file where the appcast points.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.5.0"),
+    ],
     targets: [
         // Everything either side of the CPU→GPU seam agrees on: the Uniforms
         // struct, the tunables and their specs, and the one function that fills
@@ -17,11 +24,20 @@ let package = Package(
         // rebuild — see Renderer.makeLibrary.
         .executableTarget(
             name: "BlackHoleApp",
-            dependencies: ["BlackHoleCore"],
+            dependencies: ["BlackHoleCore",
+                           .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/BlackHoleApp",
             resources: [.copy("BlackHole.metal"),
                         .copy("AppIcon.icns"),
-                        .copy("MenuIcon.png")]
+                        .copy("MenuIcon.png")],
+            // Sparkle arrives as an XCFramework, so the built binary has to be
+            // able to find it next to itself once make-app.sh has put it in
+            // Contents/Frameworks. Under plain `swift run` the loader falls back
+            // to the copy in .build, which is why both paths are listed.
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath",
+                              "-Xlinker", "@executable_path/../Frameworks"]),
+            ]
         ),
 
         // Both tools drive BlackHole.metal offscreen through the same uniform

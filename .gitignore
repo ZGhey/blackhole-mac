@@ -3,3 +3,8 @@
 dist/
 *.mov
 *.mp4
+
+# The Sparkle signing key. Whoever has it can publish an update this app
+# will install without asking; it belongs in a password manager, not here.
+sparkle-private-key.txt
+*private-key*

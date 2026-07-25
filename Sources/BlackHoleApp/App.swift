@@ -11,6 +11,7 @@ enum Shared {
     static let model = AppModel()
     static let widget = PanelController(params: params, model: model)
     static let advanced = AdvancedWindow()
+    static let updater = Updater()
 }
 
 @main
@@ -257,6 +258,7 @@ final class AppModel: ObservableObject {
 struct MenuContent: View {
     @ObservedObject var params: Params
     @ObservedObject var model: AppModel
+    @ObservedObject var updater = Shared.updater
 
     var body: some View {
         if let status = model.captureStatus {
@@ -311,6 +313,10 @@ struct MenuContent: View {
         Divider()
 
         Button(model.hidden ? "Show (⌥⌘B)" : "Hide (⌥⌘B)") { model.hidden.toggle() }
+        // Checks happen on their own once a day; this is for when you want to
+        // know now. Disabled while a check is already running — see `Updater`.
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheck)
         Button("Advanced…") { Shared.advanced.show() }
         Button("Quit Black Hole") { NSApp.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
