@@ -42,7 +42,7 @@ enum SwallowAction: String, CaseIterable, Identifiable {
 final class PanelController {
     /// Placement is the one part of this that depends on when AppKit decides
     /// to answer, so it is the one part worth being able to read back.
-    private static let log = Logger(subsystem: "dev.s13k.blackhole-app", category: "panel")
+    private static let log = Logger(subsystem: "dev.zghey.blackhole", category: "panel")
 
     /// The drawn disc is sized from the hole now, so the hit region asks the
     /// parameters rather than assuming a fixed fraction of the window.

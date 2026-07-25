@@ -107,7 +107,7 @@ designated => cdhash H"ebe3f233a58da2216530360c39fedcd7e4dcb103"
 找到它,要求随之锚定到证书上:
 
 ```
-designated => identifier "dev.s13k.blackhole-app" and certificate leaf = H"bf84f9…"
+designated => identifier "dev.zghey.blackhole" and certificate leaf = H"bf84f9…"
 ```
 
 这样授权就能熬过重新构建。想全部撤销:
@@ -279,7 +279,7 @@ BLACKHOLE_METAL=$PWD/Sources/BlackHoleApp/BlackHole.metal swift run BlackHoleApp
 捕捉和权限的问题走统一日志,因为打包后的应用会丢弃 stderr:
 
 ```sh
-log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'
+log stream --predicate 'subsystem == "dev.zghey.blackhole"'
 ```
 
 菜单的字符串在

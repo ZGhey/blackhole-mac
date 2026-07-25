@@ -7,8 +7,13 @@ import SwiftUI
 /// also has to build plain AppKit windows.
 @MainActor
 enum Shared {
-    static let params = Params()
-    static let model = AppModel()
+    /// Before either of the two things that read UserDefaults is built. Static
+    /// lets are lazy and SwiftUI may reach `params` before the delegate runs,
+    /// so the ordering is expressed here rather than hoped for.
+    private static let migrated: Void = LegacyDefaults.migrateIfNeeded()
+
+    static let params: Params = { _ = migrated; return Params() }()
+    static let model: AppModel = { _ = migrated; return AppModel() }()
     static let widget = PanelController(params: params, model: model)
     static let advanced = AdvancedWindow()
     static let updater = Updater()

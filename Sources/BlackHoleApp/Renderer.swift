@@ -26,7 +26,7 @@ enum RendererError: LocalizedError {
 /// uniform struct per frame. There is no geometry and no render graph — the
 /// whole image is the fragment shader, exactly as it was in Ghostty.
 final class Renderer: NSObject, MTKViewDelegate {
-    private static let log = Logger(subsystem: "dev.s13k.blackhole-app", category: "render")
+    private static let log = Logger(subsystem: "dev.zghey.blackhole", category: "render")
 
     let device: MTLDevice
     private let placeholder: MTLTexture

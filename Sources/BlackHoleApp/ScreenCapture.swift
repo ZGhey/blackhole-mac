@@ -22,8 +22,8 @@ final class ScreenCapture: NSObject {
     /// The capture is invisible when it works and baffling when it does not
     /// (wrong monitor, denied permission, a stream that quietly stopped), and
     /// stderr is discarded for a bundled app — so it reports to the unified log.
-    /// `log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'`
-    private static let log = Logger(subsystem: "dev.s13k.blackhole-app", category: "capture")
+    /// `log stream --predicate 'subsystem == "dev.zghey.blackhole"'`
+    private static let log = Logger(subsystem: "dev.zghey.blackhole", category: "capture")
 
     /// Latest captured frame. Written on the stream's queue, read on the
     /// render thread — both are the main thread here, since the stream output
@@ -238,7 +238,7 @@ final class ScreenCapture: NSObject {
     /// get the system prompt back after a denial or after a rebuild changed the
     /// ad-hoc signature TCC keyed the grant to.
     func resetPermissionAndRetry() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "dev.s13k.blackhole-app"
+        let bundleID = Bundle.main.bundleIdentifier ?? "dev.zghey.blackhole"
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
         task.arguments = ["reset", "ScreenCapture", bundleID]

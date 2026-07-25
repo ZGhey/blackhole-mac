@@ -129,7 +129,7 @@ once, and `make-app.sh` finds it from then on, which anchors the requirement to
 the certificate instead:
 
 ```
-designated => identifier "dev.s13k.blackhole-app" and certificate leaf = H"bf84f9…"
+designated => identifier "dev.zghey.blackhole" and certificate leaf = H"bf84f9…"
 ```
 
 Now the grant survives rebuilds. To undo it all,
@@ -343,7 +343,7 @@ not as a black screen. Capture and permission problems go to the unified log,
 since stderr is discarded for a bundled app:
 
 ```sh
-log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'
+log stream --predicate 'subsystem == "dev.zghey.blackhole"'
 ```
 
 The menu's strings are `Sources/BlackHoleApp/Resources/<lang>.lproj/Localizable.strings`,

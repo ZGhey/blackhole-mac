@@ -58,7 +58,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>      <string>BlackHoleApp</string>
-    <key>CFBundleIdentifier</key>      <string>dev.s13k.blackhole-app</string>
+    <key>CFBundleIdentifier</key>      <string>dev.zghey.blackhole</string>
     <key>CFBundleName</key>            <string>Black Hole</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>${VERSION}</string>
