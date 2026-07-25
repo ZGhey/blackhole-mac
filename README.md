@@ -59,8 +59,12 @@ Everything is in the menu-bar menu.
 - **⌥⌘B** hides and shows it. Carbon's `RegisterEventHotKey`, deliberately not
   an `NSEvent` monitor — those need the Accessibility permission for key
   events, and a widget you want to hide should not demand the right to watch
-  everything you type. Hiding fades it out and leaves the capture stream and
-  timers alone, so coming back is instant.
+  everything you type. Hiding is not cosmetic: it fades out and then tears the
+  capture stream down, stops drawing, stops the pointer poll and releases the
+  cursor — 10.3% CPU visible, 0.0% hidden, and macOS stops reporting that
+  something is recording your screen. Coming back takes about 130 ms, inside
+  the fade. Displays going to sleep, the session locking and the window being
+  fully covered park it the same way. The state is remembered across launches.
 - Positions are remembered **per display**. A widget parked in the corner of a
   laptop screen has no business landing in the middle of a 5K one when you
   dock, and the reverse leaves it off the edge entirely.
@@ -330,8 +334,10 @@ reorder.
 The terminal version drives the hole's size and position from outside — the
 context-window fill, a pomodoro clock, a roam box that grows out of a corner.
 None of that is here: the widget is a fixed object you place, so `level`, the
-Lissajous drift, the roam box and the work-area shield are gone, and the hole
-sits at the centre of its frame. What remains is the physics and the look.
+roam box and the work-area shield are gone. The Lissajous drift stayed, doing
+a different job — the lensed halo is a static mapping of whatever is behind
+the widget, so without something moving the warp field the outer rings never
+change at all. What remains is the physics and the look.
 
 The cursor-color encoding is gone too. That whole mechanism existed only because
 a terminal shader gets no custom uniforms.
