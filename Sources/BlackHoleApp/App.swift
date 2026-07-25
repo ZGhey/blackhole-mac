@@ -219,15 +219,23 @@ final class AppModel: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        frameRate = FrameRate(rawValue: d.object(forKey: "frameRate") as? Int ?? 0) ?? .fps60
+        // Restored, because the menu can still change them.
         hidden = d.bool(forKey: "hidden")
         size = d.object(forKey: "size") as? Double ?? WidgetSize.medium.points
-        lens = LensSource(rawValue: d.string(forKey: "lens") ?? "") ?? .screen
-        audioReactive = d.bool(forKey: "audioReactive")
-        launchAtLogin = LoginItem.isEnabled
-        position = PanelPosition(rawValue: d.string(forKey: "position") ?? "") ?? .free
-        swallowAction = SwallowAction(rawValue: d.string(forKey: "swallowAction") ?? "") ?? .animateOnly
-        noticesPointer = d.object(forKey: "noticesPointer") as? Bool ?? true
+        launchAtLogin = LoginItem.isEnabled   // system state, not a stored preference
+
+        // Deliberately *not* restored. These lost their menu items, so a stored
+        // value could only ever be one somebody set before and can no longer
+        // undo — "stars only" with no way back to the live lens, or dropped
+        // files going to the Trash with nothing on screen saying so. The
+        // properties and their persistence stay, so restoring a menu item
+        // restores the setting whole.
+        frameRate = .fps60
+        lens = .screen
+        audioReactive = false
+        position = .free
+        swallowAction = .animateOnly
+        noticesPointer = true
         // The display the widget was last on, not whichever one happens to be
         // main at launch. Reading main's slot means a widget parked on a second
         // screen comes back on the first one after every restart — and then the
@@ -293,54 +301,16 @@ struct MenuContent: View {
             }
         }
 
-        Menu("Lens") {
-            ForEach(LensSource.allCases) { source in
-                Button(check(model.lens == source) + source.label) { model.lens = source }
-            }
-            Divider()
-            Button(check(model.audioReactive) + "Pulse with audio") {
-                model.audioReactive.toggle()
-            }
-            if model.audioReactive && model.lens != .screen {
-                Text("needs the live-screen lens")
-            }
-        }
-
-        Menu("Position") {
-            ForEach(PanelPosition.allCases) { p in
-                Button(check(model.position == p) + p.label) { model.position = p }
-            }
-            if model.position == .free {
-                Divider()
-                Button("Snap to top") { Shared.widget.snapToEdge(.maxY) }
-                Button("Snap to bottom") { Shared.widget.snapToEdge(.minY) }
-                Button("Snap to left") { Shared.widget.snapToEdge(.minX) }
-                Button("Snap to right") { Shared.widget.snapToEdge(.maxX) }
-            }
-        }
-
-        Menu("Frame rate") {
-            ForEach(FrameRate.allCases) { r in
-                Button(check(model.frameRate == r) + r.label) { model.frameRate = r }
-            }
-        }
-
-        Button(check(model.noticesPointer) + "Swallow the pointer") {
-            model.noticesPointer.toggle()
-        }
-
-        Menu("Dropped files") {
-            ForEach(SwallowAction.allCases) { a in
-                Button(check(model.swallowAction == a) + a.label) { model.swallowAction = a }
-            }
-        }
-
+        // Size and Style are the whole menu. Everything else the widget can do
+        // — which lens, where it sits, how fast it redraws, whether it swallows
+        // the pointer, what becomes of a dropped file — has a default worth
+        // shipping, and listing all of them made an ornament read as a control
+        // panel. The settings still exist; `AppModel` pins them to their
+        // defaults now rather than restoring whatever was last chosen, because
+        // a value nobody can see is a value nobody can put back.
         Divider()
 
         Button(model.hidden ? "Show (⌥⌘B)" : "Hide (⌥⌘B)") { model.hidden.toggle() }
-        Button(check(model.launchAtLogin) + "Launch at login") {
-            model.launchAtLogin.toggle()
-        }
         Button("Advanced…") { Shared.advanced.show() }
         Button("Quit Black Hole") { NSApp.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)

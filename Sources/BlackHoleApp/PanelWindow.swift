@@ -311,25 +311,6 @@ final class PanelController {
         return CGPoint(x: f.maxX - size - 40, y: f.maxY - size - 40)
     }
 
-    /// Nudge it right up against an edge. Dragging by hand cannot reach the
-    /// last pixel, and the composition fills the window now, so flush against
-    /// the top is a real position rather than a gap.
-    func snapToEdge(_ edge: NSRectEdge) {
-        guard let panel, let screen = panelScreen else { return }
-        var frame = panel.frame
-        let b = screen.frame
-        switch edge {
-        case .minX: frame.origin.x = b.minX
-        case .maxX: frame.origin.x = b.maxX - frame.width
-        case .minY: frame.origin.y = b.minY
-        case .maxY: frame.origin.y = b.maxY - frame.height
-        @unknown default: return
-        }
-        panel.setFrame(frame, display: true)
-        model.origin = frame.origin
-        lensChanged()
-    }
-
     /// A saved position can name a display that is no longer attached — unplug
     /// a monitor with the widget on it and it comes back invisible, off the
     /// edge of every screen, with no way to drag it home.
