@@ -168,10 +168,9 @@ at a still screen and, left alone, not one pixel outside the disk changes —
 measured at 0.25/255 per second against 7.0 inside it. The halo has no motion of
 its own; it only moves when the warp field does.
 
-So the hole drifts. `DRIFT` puts it back on the Lissajous the GLSL used to walk
-it across a whole terminal — two incommensurate sines per axis, so the path
-never repeats — just small enough that a dropped file still lands where you
-aimed. That alone took the halo from 0.25 to 13.5 per second, and the outermost
+So the hole drifts. `DRIFT` walks it on a Lissajous path — two incommensurate
+sines per axis, so it never repeats — just small enough that a dropped file
+still lands where you aimed. That alone took the halo from 0.25 to 13.5 per second, and the outermost
 ring from exactly zero to 3.0.
 
 Inside the disk, an **orbiting hot spot** does the rest. The streak field only
@@ -223,9 +222,8 @@ What happens to it is tidal, not optical.
 The shader is handed an already-integrated `diskPhase` rather than a rate it
 multiplies by time. Anything that modulates how fast the disk turns — a flare, a
 bass note — would otherwise jump every streak at once the moment it changed,
-because `time` is large by then and scaling it moves the whole pattern. The
-original GLSL hits the same wall and warns about it. Integrating on the CPU
-makes the rate free to vary with no visible seam.
+because `time` is large by then and scaling it moves the whole pattern. Integrating on the CPU makes the rate
+free to vary with no visible seam.
 
 The flare leans on **temperature** more than gain: extra gain mostly clips.
 
@@ -361,23 +359,6 @@ pads, never reorder. `./make-check.sh` compares the two field for field, so a
 reorder fails rather than quietly feeding every later field to the wrong
 parameter.
 
-## Differences from the Ghostty shader
-
-The terminal version drives the hole's size and position from outside — the
-context-window fill, a pomodoro clock, a roam box that grows out of a corner.
-None of that is here: the widget is a fixed object you place, so `level`, the
-roam box and the work-area shield are gone. The Lissajous drift stayed, doing
-a different job — the lensed halo is a static mapping of whatever is behind
-the widget, so without something moving the warp field the outer rings never
-change at all. What remains is the physics and the look.
-
-The cursor-color encoding is gone too. That whole mechanism existed only because
-a terminal shader gets no custom uniforms.
-
-## Credit and licence
-
-The idea of putting one of these on a screen came from
-[a black-hole shader for Ghostty](https://github.com/s0xDk/ghostty-blackhole),
-whose design this took its cues from. The renderer here is its own.
+## Licence
 
 MIT — see [LICENSE](LICENSE).
