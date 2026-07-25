@@ -61,5 +61,10 @@ let package = Package(
             dependencies: ["BlackHoleCore"],
             path: "Tools/render-icon"
         ),
+        .executableTarget(
+            name: "render-demo",
+            dependencies: ["BlackHoleCore"],
+            path: "Tools/render-demo"
+        ),
     ]
 )

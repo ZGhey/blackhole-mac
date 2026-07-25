@@ -8,3 +8,7 @@ dist/
 # will install without asking; it belongs in a password manager, not here.
 sparkle-private-key.txt
 *private-key*
+
+# The demo backdrop is whatever screen it was taken from; only the gif built
+# from it is committed.
+docs/backdrop.png

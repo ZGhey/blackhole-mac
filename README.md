@@ -11,6 +11,8 @@ painted on.
 It floats above your windows and **bends the live screen behind it**. Your
 editor, your browser, your Finder icons genuinely warp around the horizon.
 
+![Each style in turn, over a real screen](docs/demo.gif)
+
 Download the latest **[`Black Hole.dmg`](../../releases/latest)**, or build it
 yourself:
 
