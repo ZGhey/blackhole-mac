@@ -1,7 +1,8 @@
 # Black Hole — a floating widget for macOS
 
-The renderer from [`blackhole.glsl`](../blackhole.glsl), lifted out of Ghostty
-into a native macOS app: Metal, one fullscreen triangle, one fragment shader.
+A hand port of [`blackhole.glsl`](https://github.com/s0xDk/ghostty-blackhole),
+lifted out of Ghostty into a native macOS app: Metal, one fullscreen triangle,
+one fragment shader.
 Same physics, same numbers — every pixel near the hole integrates its own null
 geodesic through the Schwarzschild metric, and the shadow, lensing, photon ring,
 disk images and time dilation all fall out of that integration rather than being
@@ -11,8 +12,8 @@ It floats above your windows and **bends the live screen behind it**. Your
 editor, your browser, your Finder icons genuinely warp around the horizon.
 
 ```sh
-./macapp/make-signing-cert.sh     # once — see "Permissions" below
-./macapp/make-app.sh && open "macapp/dist/Black Hole.app"
+./make-signing-cert.sh     # once — see "Permissions" below
+./make-app.sh && open "dist/Black Hole.app"
 ```
 
 Requires macOS 13+. There is no Dock icon and no main window: the app lives in
@@ -341,3 +342,11 @@ change at all. What remains is the physics and the look.
 
 The cursor-color encoding is gone too. That whole mechanism existed only because
 a terminal shader gets no custom uniforms.
+
+## Credit and licence
+
+The physics, the look and the original GLSL are
+[s13k's Ghostty black-hole shader](https://github.com/s0xDk/ghostty-blackhole).
+This is that renderer ported to Metal and grown into a widget; everything it
+knows about geodesics it learned there. MIT, and the copyright stays with the
+original author — see [LICENSE](LICENSE).
