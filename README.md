@@ -2,10 +2,8 @@
 
 **English** · [简体中文](README.zh-Hans.md)
 
-A hand port of [`blackhole.glsl`](https://github.com/s0xDk/ghostty-blackhole),
-lifted out of Ghostty into a native macOS app: Metal, one fullscreen triangle,
-one fragment shader.
-Same physics, same numbers — every pixel near the hole integrates its own null
+A Schwarzschild black hole as a native macOS app: Metal, one fullscreen
+triangle, one fragment shader. Every pixel near the hole integrates its own null
 geodesic through the Schwarzschild metric, and the shadow, lensing, photon ring,
 disk images and time dilation all fall out of that integration rather than being
 painted on.
@@ -378,8 +376,8 @@ a terminal shader gets no custom uniforms.
 
 ## Credit and licence
 
-The physics, the look and the original GLSL are
-[s13k's Ghostty black-hole shader](https://github.com/s0xDk/ghostty-blackhole).
-This is that renderer ported to Metal and grown into a widget; everything it
-knows about geodesics it learned there. MIT, and the copyright stays with the
-original author — see [LICENSE](LICENSE).
+The idea of putting one of these on a screen came from
+[a black-hole shader for Ghostty](https://github.com/s0xDk/ghostty-blackhole),
+whose design this took its cues from. The renderer here is its own.
+
+MIT — see [LICENSE](LICENSE).

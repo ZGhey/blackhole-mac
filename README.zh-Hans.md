@@ -2,11 +2,9 @@
 
 [English](README.md) · **简体中文**
 
-从 Ghostty 里把 [`blackhole.glsl`](https://github.com/s0xDk/ghostty-blackhole)
-手工移植成原生 macOS 应用:Metal、一个全屏三角形、一个片元着色器。
-物理和数值都没变 —— 洞附近的每一个像素都在史瓦西度规下积分自己的零测地线,
-黑洞阴影、引力透镜、光子环、吸积盘的多重像和时间膨胀,全都是从那次积分里
-长出来的,不是画上去的。
+一个史瓦西黑洞,做成原生 macOS 应用:Metal、一个全屏三角形、一个片元着色器。
+洞附近的每一个像素都在史瓦西度规下积分自己的零测地线,黑洞阴影、引力透镜、
+光子环、吸积盘的多重像和时间膨胀,全都是从那次积分里长出来的,不是画上去的。
 
 它浮在你的窗口上方,**把背后活的屏幕掰弯**。你的编辑器、浏览器、访达图标,
 是真的绕着视界扭曲。
@@ -309,7 +307,8 @@ log stream --predicate 'subsystem == "dev.s13k.blackhole-app"'
 
 ## 致谢与许可
 
-物理、观感和原始 GLSL 都来自
-[s13k 的 Ghostty 黑洞着色器](https://github.com/s0xDk/ghostty-blackhole)。
-这个项目是把那个渲染器移植到 Metal 并长成了一个部件;它关于测地线的一切都是在
-那里学的。MIT 许可,版权仍归原作者 —— 见 [LICENSE](LICENSE)。
+把这么一个东西放到屏幕上的想法,来自
+[一个给 Ghostty 写的黑洞着色器](https://github.com/s0xDk/ghostty-blackhole),
+本项目的设计从那里取过灵感。这里的渲染器是自己的。
+
+MIT 许可 —— 见 [LICENSE](LICENSE)。

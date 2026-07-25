@@ -8,7 +8,7 @@ A Schwarzschild black hole as a floating macOS **widget**: Metal, one fullscreen
 
 Menu-bar-only (`.accessory` policy, `LSUIElement`), one `NSPanel` that lenses the live screen behind it via ScreenCaptureKit. See `README.md` for what it does; this file is for how not to break it.
 
-`BlackHole.metal` is a hand port of `blackhole.glsl` from the Ghostty shader project it grew out of (MIT, s13k — see LICENSE). The two are **separate codebases now**: the GLSL keeps compile-time `const float` tunables, this one turned every tunable into a uniform. Nothing is shared and nothing needs to be kept in sync.
+Every tunable is a uniform rather than a compile-time constant, which is what lets the Advanced panel drive the look live with no recompile.
 
 ## Commands
 
@@ -74,7 +74,7 @@ Ranges, groups, help text and defaults for each tunable live in `Sources/BlackHo
 - **The lensed halo has no motion of its own** — it is a static mapping of what is behind the widget. `DRIFT` (the GLSL's Lissajous, moved to the CPU) is what makes it move; without it the region outside the disk measures 0.25/255 of change per second, with it 13.5.
 - The widget deliberately has **no size driver**: no context-window fill, no pomodoro, no roam box. Those exist only in `blackhole.glsl`.
 
-## Inherited from the GLSL
+## MSL gotchas
 
 - Metal's fragment `[[position]]` origin is top-left, which is the same top-down convention Ghostty's `fragCoord` used, so the y handling ported unchanged.
 - MSL's `fmod` truncates where GLSL's `mod` floors; `gmod` exists for that, and `mirrorUV` plus the noise lattice wrap depend on it.
