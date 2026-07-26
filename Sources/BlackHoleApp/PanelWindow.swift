@@ -26,10 +26,32 @@ enum SwallowAction: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .animateOnly: return "Just the animation"
-        case .moveToTrash: return "Move it to the Trash"
+        case .animateOnly: return L("menu.swallow.animate")
+        case .moveToTrash: return L("menu.swallow.trash")
         }
     }
+}
+
+/// The Finder's own "move to trash" sound.
+///
+/// The two swallow actions animate identically — they have to, the animation is
+/// the point — so with nothing else, a file really leaving is indistinguishable
+/// from a file being drawn at. This is the cheapest honest signal: it costs no
+/// screen space, it arrives at the moment the file actually moves, and it is
+/// already what this Mac means by "something went to the Trash".
+///
+/// The file is not in `/System/Library/Sounds`, so it is loaded by path with a
+/// fallback — an OS that moves it should cost the confirmation its recognisable
+/// character, not the confirmation itself.
+@MainActor
+enum TrashSound {
+    private static let sound: NSSound? = {
+        let path = "/System/Library/Components/CoreAudio.component/Contents"
+            + "/SharedSupport/SystemSounds/finder/move to trash.aif"
+        return NSSound(contentsOfFile: path, byReference: true) ?? NSSound(named: "Pop")
+    }()
+
+    static func play() { sound?.play() }
 }
 
 /// The floating black hole.
@@ -50,14 +72,35 @@ final class PanelController {
         params.haloRadiusFraction()
     }
 
+    /// What you can actually grab: the hole itself, not the whole composition.
+    ///
+    /// The disc is mostly accretion disk and lensed screen, and both of those
+    /// are things you want to look *through*. Taking clicks across all of it
+    /// meant a widget parked over a window stole every click that landed on the
+    /// halo, which is a large and almost invisible area. The shadow is the one
+    /// part with a hard visual edge, so it is the one part that can be a target
+    /// without anybody having to be told where it is.
+    ///
+    /// Deliberately not the same radius the cursor swallowing uses — that
+    /// effect belongs to the whole lensed field and still gets
+    /// `silhouetteRadius`. This is only about which clicks the window takes.
+    static func grabRadius(_ params: Params) -> Double {
+        params.shadowRadiusFraction()
+    }
+
     private var panel: NSPanel?
     private var content: PanelContentView?
     private var positionTimer: Timer?
     private var hitTestTimer: Timer?
+    private var lastGrabRadius: Double = 0
     private var observers: [NSObjectProtocol] = []
 
     private let params: Params
     private let model: AppModel
+
+    /// For the content view's cursor rect, which is sized from the same hole
+    /// the hit region is.
+    var hitParams: Params { params }
 
     /// Fired whenever the widget parks or unparks. The style cycler hangs off
     /// this rather than the controller knowing about it, for the same reason
@@ -484,20 +527,32 @@ final class PanelController {
             return
         }
         let frame = panel.frame
-        let radius = frame.height * Self.silhouetteRadius(params)
         let centre = CGPoint(x: frame.midX, y: frame.midY)
+        // The cursor is dragged in across the whole lensed field; only clicks
+        // are confined to the hole. Two radii, one centre.
         Proximity.shared.centre = centre
-        Proximity.shared.radius = radius
+        Proximity.shared.radius = frame.height * Self.silhouetteRadius(params)
+        let grab = frame.height * Self.grabRadius(params)
+        // The hole is a different size in every style, and styles can now change
+        // under their own steam, so the cursor rect cannot be set once.
+        if let content, abs(grab - lastGrabRadius) > 0.5 {
+            lastGrabRadius = grab
+            panel.invalidateCursorRects(for: content)
+        }
         let mouse = NSEvent.mouseLocation
-        let inside = hypot(mouse.x - centre.x, mouse.y - centre.y) <= radius
+        let inside = hypot(mouse.x - centre.x, mouse.y - centre.y) <= grab
         panel.ignoresMouseEvents = !(inside || busy)
     }
 }
 
 // ------------------------------------------------------------ content view --
 
-/// Everything the Metal view cannot do: move the widget, resize it by its rim,
-/// and swallow files dropped onto it.
+/// Everything the Metal view cannot do: move the widget, and swallow files
+/// dropped onto it.
+///
+/// It only ever sees the events the window did not make click-through, which is
+/// the hole and nothing else — so "drop a file on it" means on the hole, and
+/// the disk and the halo are things the desktop underneath gets to keep.
 final class PanelContentView: NSView {
     weak var model: AppModel?
     weak var controller: PanelController?
@@ -526,10 +581,18 @@ final class PanelContentView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() {
-        // A hint that the rim does something: the pointer changes as it crosses
-        // into the resize band.
+        // Only over the hole, because only over the hole is there anything to
+        // grab. A view-wide open hand over a widget that ignores clicks
+        // everywhere but the middle is an invitation to a drag that will not
+        // start. AppKit takes rects, not discs; the square inscribed in the
+        // grab circle undersells it slightly, which is the right way to be
+        // wrong — the cursor never promises something the click cannot deliver.
         discardCursorRects()
-        addCursorRect(bounds, cursor: .openHand)
+        guard let params = controller?.hitParams else { return }
+        let radius = bounds.height * PanelController.grabRadius(params)
+        let side = radius * 2 / 2.0.squareRoot()
+        addCursorRect(NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
+                             width: side, height: side), cursor: .openHand)
     }
 
     // ---- moving ----
@@ -549,12 +612,12 @@ final class PanelContentView: NSView {
                                       y: grabOrigin.y + (now.y - grabPoint.y)))
     }
 
+    // Double-clicking used to open the Advanced panel. It was a shortcut to a
+    // window that is one menu item away, on a target that is now the hole
+    // alone — small enough that a double click is as likely to be two attempts
+    // at picking the widget up. Dragging is the only thing the surface does.
     override func mouseUp(with event: NSEvent) {
         defer { dragging = false; isInteracting = false }
-        if event.clickCount == 2 {
-            Shared.advanced.show()
-            return
-        }
         guard dragging else { return }
         if let window, let model { model.origin = window.frame.origin }
         controller?.settleOntoOneScreen()
@@ -599,7 +662,13 @@ final class PanelContentView: NSView {
             // explicitly enabled, and only for things that exist on disk — the
             // default eats nothing.
             if action == .moveToTrash, case .file(let url) = morsel.kind {
-                NSWorkspace.shared.recycle([url])
+                NSWorkspace.shared.recycle([url]) { _, error in
+                    // Only on success, and only once the move has actually
+                    // happened: a sound for a file that is still where it was
+                    // is worse than no sound at all.
+                    guard error == nil else { return }
+                    Task { @MainActor in TrashSound.play() }
+                }
             }
         }
     }

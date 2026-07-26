@@ -66,6 +66,10 @@ cat > "$APP/Contents/Info.plist" <<EOF
          and Sparkle compares it to decide whether an update is newer. -->
     <key>CFBundleVersion</key>         <string>${BUILD}</string>
     <key>CFBundleIconFile</key>        <string>AppIcon</string>
+    <!-- The system About panel reads this; without it the panel simply has no
+         copyright line, which is the one part of a standard About box that
+         cannot come from anywhere else. -->
+    <key>NSHumanReadableCopyright</key> <string>Copyright © 2026 Jack Zhang. MIT licence.</string>
     <key>LSMinimumSystemVersion</key>  <string>13.0</string>
     <!-- What the app can be shown in. macOS picks from these against the
          system's preferred languages; there is no in-app language setting and

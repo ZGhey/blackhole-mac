@@ -277,6 +277,25 @@ do {
          (0..<5).map { String((walk[0] + $0) % 3) }.joined(),
          "the rotation must step one style an hour and wrap")
 
+    // The short rungs are the same arithmetic on a different divisor, and they
+    // have to land on the local clock's own boundaries — :05, :30 — not on
+    // whenever the app happened to launch.
+    for (label, iv, step) in [("5 min", CycleInterval.fiveMinutes, 300.0),
+                              ("30 min", CycleInterval.thirtyMinutes, 1800.0)] {
+        let stepWalk = (0..<4).map {
+            StyleCycle.index(at: t0.addingTimeInterval(Double($0) * step),
+                             interval: iv, count: 3, calendar: cal)!
+        }
+        want("\(label): 4 slots over 3 styles", stepWalk.map(String.init).joined(),
+             (0..<4).map { String((stepWalk[0] + $0) % 3) }.joined(),
+             "every rung must step one style per interval and wrap")
+        let edge = StyleCycle.nextBoundary(after: t0, interval: iv, calendar: cal)!
+        want("\(label): boundary is on the divisor",
+             String(edge.timeIntervalSince1970.truncatingRemainder(dividingBy: step) == 0
+                    && edge > t0 && edge.timeIntervalSince(t0) <= step), "true",
+             "the boundary must be the next multiple of the interval, in the future")
+    }
+
     // Eight hours asleep lands on the style of the hour, not eight steps on
     // from wherever it was — this is what makes the cycle need no stored state.
     want("hourly: 8 h gap == 8 steps",
@@ -305,6 +324,29 @@ do {
     want("daily: 4 days over 3 styles", dstWalk.map(String.init).joined(),
          (0..<4).map { String((dstWalk[0] + $0) % 3) }.joined(),
          "the rotation must step one style a day and wrap")
+
+    // The anchor is what makes switching the cycle on land on the *first*
+    // selected style rather than on whichever one the bare clock was passing.
+    // Without it somebody who ticks "every 5 minutes" expecting the top of
+    // their list gets an arbitrary one, which reads as the feature misfiring.
+    do {
+        let anchor = StyleCycle.slot(at: t0, interval: .hourly, calendar: cal)!
+        want("anchor: starts at the first style",
+             String(StyleCycle.index(at: t0, interval: .hourly, count: 7,
+                                     anchor: anchor, calendar: cal)!), "0",
+             "the anchored rotation must begin at index 0")
+        let later = (1...4).map {
+            StyleCycle.index(at: t0.addingTimeInterval(Double($0) * hour),
+                             interval: .hourly, count: 7, anchor: anchor, calendar: cal)!
+        }
+        want("anchor: then steps 1,2,3,4", later.map(String.init).joined(), "1234",
+             "anchoring must shift which style shows, not how it advances")
+        // Shifting the phase must not move the switch times.
+        let edge = StyleCycle.nextBoundary(after: t0, interval: .hourly, calendar: cal)!
+        want("anchor: boundaries stay on the hour",
+             String(edge.timeIntervalSince1970.truncatingRemainder(dividingBy: 3600) == 0),
+             "true", "the anchor must not move the clock boundaries")
+    }
 
     // Dates before 1970 make the slot negative, and Swift's % keeps the sign.
     let ancient = Date(timeIntervalSince1970: -5 * hour)

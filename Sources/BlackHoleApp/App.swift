@@ -36,14 +36,58 @@ struct BlackHoleApp: App {
         return image
     }()
 
+    /// The same glyph with a Trash badge, for while dropped files are really
+    /// being thrown away.
+    ///
+    /// Composed rather than drawn: there is no icon art in this repo and there
+    /// should not be — the hole in the menu bar is the app's own render (see
+    /// `make-icon.sh`), and a second hand-made asset would be a second thing to
+    /// keep in step with it. The badge is punched out of the glyph with a clear
+    /// ring first, or a dark symbol on a dark hole is a smudge; both stay
+    /// template, so the system still tints the pair for light and dark.
+    static let menuIconArmed: NSImage = {
+        // 0.44 of the glyph, measured rather than guessed: rendered at 1x beside
+        // the plain one, anything above about half swallows the hole and the
+        // status item stops reading as this app at all. At the retina 36 px the
+        // badge is legibly a bin; at 1x it is at least unmistakably *different*,
+        // which with the menu's own check mark is enough.
+        let side: CGFloat = 18
+        let badge = side * 0.44
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+            menuIcon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+            let box = NSRect(x: side - badge, y: 0, width: badge, height: badge)
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            NSBezierPath(ovalIn: box.insetBy(dx: -1.0, dy: -1.0)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            let config = NSImage.SymbolConfiguration(pointSize: badge, weight: .bold)
+            NSImage(systemSymbolName: "trash.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(config)?
+                .draw(in: box)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(params: Shared.params, model: Shared.model, cycler: Shared.cycler)
         } label: {
-            Image(nsImage: Self.menuIcon)
+            MenuLabel(model: Shared.model)
         }
+    }
+}
+
+/// The status item's glyph. A view rather than a bare `Image`, so that arming
+/// the Trash changes it — the mode has to be visible from outside the menu.
+struct MenuLabel: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Image(nsImage: model.swallowAction == .moveToTrash
+              ? BlackHoleApp.menuIconArmed : BlackHoleApp.menuIcon)
     }
 }
 
@@ -139,10 +183,17 @@ final class AppModel: ObservableObject {
     @Published var lens: LensSource {
         didSet {
             UserDefaults.standard.set(lens.rawValue, forKey: "lens")
+            lensChosen = true
             ScreenCapture.shared.capturesAudio = audioReactive && lens == .screen
             onLensChange?()
         }
     }
+    /// False until somebody has picked a lens themselves. The launch value is
+    /// *inferred* and never written, so the absence of the stored key is what
+    /// "has not decided yet" means — which is the only group the menu's
+    /// first-run hint is for. Choosing either option, including choosing not to
+    /// record, retires it for good.
+    @Published private(set) var lensChosen: Bool
     @Published var position: PanelPosition {
         didSet {
             UserDefaults.standard.set(position.rawValue, forKey: "position")
@@ -254,19 +305,28 @@ final class AppModel: ObservableObject {
         // on purpose — permission stays granted after they do.
         if let raw = d.string(forKey: "lens"), let stored = LensSource(rawValue: raw) {
             lens = stored
+            lensChosen = true
         } else {
             lens = CGPreflightScreenCaptureAccess() ? .screen : .stars
+            lensChosen = false
         }
+
+        // Restored again, now that it has a menu item back. It was pinned while
+        // it did not: a widget that eats files for real, with no way to see the
+        // setting and no way to change it, is a trap. What makes it safe to
+        // restore is not the menu item on its own — it is the menu item plus the
+        // Trash sound at the moment a file moves and the menu-bar glyph that
+        // changes while the mode is armed.
+        swallowAction = (d.string(forKey: "swallowAction")
+                            .flatMap(SwallowAction.init(rawValue:))) ?? .animateOnly
 
         // Deliberately *not* restored. These lost their menu items, so a stored
         // value could only ever be one somebody set before and can no longer
-        // undo — dropped files going to the Trash with nothing on screen saying
-        // so. The properties and their persistence stay, so restoring a menu
+        // undo. The properties and their persistence stay, so restoring a menu
         // item restores the setting whole.
         frameRate = .fps60
         audioReactive = false
         position = .free
-        swallowAction = .animateOnly
         noticesPointer = true
         // The display the widget was last on, not whichever one happens to be
         // main at launch. Reading main's slot means a widget parked on a second
@@ -293,17 +353,10 @@ struct MenuContent: View {
     @ObservedObject var updater = Shared.updater
 
     var body: some View {
-        // The top of the menu is the "only when there is something to say" band.
-        // Offering the lens belongs in it: a widget that is not recording the
-        // screen is a widget with an obvious thing left to offer, and one that
-        // is has nothing to report unless the capture is unhappy. Turning the
-        // lens back *off* is not here on purpose — it is a rare thing to want,
-        // and a permanent line in a two-item menu is what this menu is built to
-        // avoid. It lives in the Advanced panel instead.
-        if model.lens == .stars {
-            Button(L("menu.lens.enable")) { model.lens = .screen }
-            Divider()
-        } else if let status = model.captureStatus {
+        // Still the "only when there is something to say" band: what the lens
+        // is doing is now a menu of its own, so all this has left to report is
+        // a capture that is unhappy.
+        if let status = model.captureStatus {
             Text(status)
             if model.captureDenied {
                 Button(L("capture.askAgain")) {
@@ -314,11 +367,40 @@ struct MenuContent: View {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                // Somebody who has said no twice needs a way out that is not a
-                // trip to System Settings.
-                Button(L("capture.useStars")) { model.lens = .stars }
             }
             Divider()
+        }
+
+        // The first-run hint, and the only nagging this app does.
+        //
+        // Opt-in solved the permission prompt and created a second problem: a
+        // widget that has never been asked to lens anything draws a disk over
+        // nothing, which is a much duller object than the one the screenshots
+        // show, and nobody in that state has any way of knowing what they are
+        // missing. So the offer is made once — as a button, because pointing at
+        // a menu somebody has not opened is not an offer — and it retires the
+        // moment a lens is picked. Choosing *not* to record retires it too:
+        // somebody who said no has answered the question, and asking again is
+        // the behaviour opt-in existed to remove.
+        if !model.lensChosen && model.lens == .stars {
+            Button(L("menu.lens.hint")) { model.lens = .screen }
+            Divider()
+        }
+
+        // Whether the screen is being recorded is the widget's most consequential
+        // setting and the only one that costs a permission, so it is not hidden
+        // behind Advanced and it is not conditional — it reads the same on the
+        // way in as on the way out.
+        Menu(L("menu.lens")) {
+            // Inert text, above the choice it describes. A tooltip would be the
+            // tidier place for it, but a status-bar menu is not a reliable one
+            // to hang a tooltip on, and this has to be readable by the person
+            // who opened the menu precisely because they did not know.
+            Text(L("menu.lens.explain"))
+            Divider()
+            ForEach(LensSource.allCases) { source in
+                Button(check(model.lens == source) + source.label) { model.lens = source }
+            }
         }
 
         Menu(L("menu.size")) {
@@ -355,34 +437,47 @@ struct MenuContent: View {
                     cycler.styleRemoved(name)
                 }
             }
+        }
+
+        // Beside Style rather than inside it. Nested under Style the submenu had
+        // to sit below eight styles, the saved ones, and Save/Delete, and the
+        // list you actually came to tick was the last thing on it.
+        Menu(L("menu.cycle")) {
+            ForEach(CycleInterval.allCases) { each in
+                Button(check(cycler.interval == each) + each.label) {
+                    cycler.interval = each
+                }
+            }
             Divider()
-            // Under Style, not beside it: what rotates is styles, and the top
-            // level of this menu is meant to stay two items long.
-            Menu(L("menu.cycle")) {
-                ForEach(CycleInterval.allCases) { each in
-                    Button(check(cycler.interval == each) + each.label) {
-                        cycler.interval = each
-                    }
+            ForEach(cycler.allStyleNames, id: \.self) { name in
+                Button(check(cycler.selected.contains(name)) + name) {
+                    cycler.toggle(name)
                 }
-                Divider()
-                ForEach(cycler.allStyleNames, id: \.self) { name in
-                    Button(check(cycler.selected.contains(name)) + name) {
-                        cycler.toggle(name)
-                    }
+            }
+            Divider()
+            Button(L("menu.cycle.all")) { cycler.selectAll() }
+            Button(L("menu.cycle.none")) { cycler.selectNone() }
+        }
+
+        // What a dropped file is actually for. The default eats nothing, and
+        // arming the other one is the only irreversible thing this widget can be
+        // told to do, so it asks the first time — see `TrashPrompt`.
+        Menu(L("menu.swallow")) {
+            ForEach(SwallowAction.allCases) { action in
+                Button(check(model.swallowAction == action) + action.label) {
+                    arm(action)
                 }
-                Divider()
-                Button(L("menu.cycle.all")) { cycler.selectAll() }
-                Button(L("menu.cycle.none")) { cycler.selectNone() }
             }
         }
 
-        // Size and Style are the whole menu. Everything else the widget can do
-        // — which lens, where it sits, how fast it redraws, whether it swallows
-        // the pointer, what becomes of a dropped file — has a default worth
-        // shipping, and listing all of them made an ornament read as a control
-        // panel. The settings still exist; `AppModel` pins them to their
-        // defaults now rather than restoring whatever was last chosen, because
-        // a value nobody can see is a value nobody can put back.
+        // Lens, Size, Style, Cycle. Everything else the widget can do — where it
+        // sits, how fast it redraws, whether it swallows the pointer, what
+        // becomes of a dropped file — has a default worth shipping, and listing
+        // all of them made an ornament read as a control panel. The settings
+        // still exist; `AppModel` pins them to their defaults now rather than
+        // restoring whatever was last chosen, because a value nobody can see is
+        // a value nobody can put back. The lens is the exception that came back:
+        // it is the one setting that costs a permission.
         Divider()
 
         Button(model.hidden ? L("menu.show") : L("menu.hide")) { model.hidden.toggle() }
@@ -394,6 +489,7 @@ struct MenuContent: View {
             model.launchAtLogin.toggle()
         }
         Button(L("menu.advanced")) { Shared.advanced.show() }
+        Button(L("menu.about")) { AboutPanel.show() }
         Button(L("menu.quit")) { NSApp.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
     }
@@ -409,6 +505,18 @@ struct MenuContent: View {
     private func pick(_ name: String) {
         cycler.stop()
         params.apply(style: name)
+    }
+
+    /// Turning the Trash on is the one setting here that can lose you something,
+    /// so the first time it is chosen it has to be *chosen*, not brushed past on
+    /// the way down a menu. Once confirmed it never asks again: the sound and
+    /// the changed menu-bar glyph are what carry the state from then on.
+    private func arm(_ action: SwallowAction) {
+        guard action == .moveToTrash, !TrashPrompt.confirmed else {
+            model.swallowAction = action
+            return
+        }
+        if TrashPrompt.confirm() { model.swallowAction = action }
     }
 }
 
@@ -439,6 +547,75 @@ final class AdvancedWindow {
     }
 }
 
+
+// ------------------------------------------------------------ trash prompt --
+
+/// Asked once, the first time anybody arms the Trash.
+///
+/// A menu-bar app has no window to hang a sheet on, so this is a plain modal
+/// alert — the same reason `StylePrompt` is one. The destructive button is not
+/// the default: this dialog exists because the setting is easy to pick by
+/// accident, and a default-focused "Move to Trash" would reintroduce exactly
+/// that.
+@MainActor
+enum TrashPrompt {
+    private static let key = "swallowTrashConfirmed"
+
+    static var confirmed: Bool { UserDefaults.standard.bool(forKey: key) }
+
+    /// True if it should be armed.
+    static func confirm() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("trash.confirm.title")
+        alert.informativeText = L("trash.confirm.message")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("trash.confirm.cancel"))
+        alert.addButton(withTitle: L("trash.confirm.ok"))
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        UserDefaults.standard.set(true, forKey: key)
+        return true
+    }
+}
+
+// ------------------------------------------------------------------ about --
+
+/// The system's own About panel, not one of ours.
+///
+/// It reads the name, icon, version and copyright straight out of `Info.plist`,
+/// lays them out the way every other Mac app's does, and is localized by the
+/// system — three things a hand-built window would have to redo and would get
+/// subtly wrong. The only part worth supplying is the credits, which is where
+/// the licence and the repository go.
+///
+/// `activate` first: with `.accessory` there is no Dock icon to bounce and no
+/// app menu to have come from, so an un-activated panel opens behind whatever
+/// is in front.
+@MainActor
+enum AboutPanel {
+    static func show() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
+
+    private static var credits: NSAttributedString {
+        let body = NSMutableAttributedString()
+        let base: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        body.append(NSAttributedString(string: L("about.blurb") + "\n\n", attributes: base))
+        var link = base
+        link[.link] = URL(string: "https://github.com/ZGhey/blackhole-mac")!
+        body.append(NSAttributedString(string: "github.com/ZGhey/blackhole-mac", attributes: link))
+        body.append(NSAttributedString(string: "\n" + L("about.licence"), attributes: base))
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        body.addAttribute(.paragraphStyle, value: centred,
+                          range: NSRange(location: 0, length: body.length))
+        return body
+    }
+}
 
 // -------------------------------------------------------------- style save --
 

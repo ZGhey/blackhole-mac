@@ -33,8 +33,9 @@ right-click ▸ **Open** rather than a double-click. After that macOS remembers.
 
 **On Windows?** [BlackHoleTrash](https://github.com/rrrjqy66/BlackHoleTrash) is a
 separate project built on the same idea — a lensing black hole you can put on the
-desktop. It also doubles as a real Recycle Bin, which this one deliberately does
-not: here, dropping a file only feeds the animation.
+desktop, doubling as a real Recycle Bin. This one will do that too if you ask it
+to, but it does not by default: out of the box, dropping a file only feeds the
+animation.
 
 Requires **macOS 13 or later on Apple silicon**. There is no Dock icon and no
 main window: the app lives in the menu bar (⚫). The menu follows the system's
@@ -44,38 +45,54 @@ To build it yourself instead, see [Building it](#building-it).
 
 ## Using it
 
-The menu has two settings in it, because two is what it needs — anything above
-them is the widget having something to tell you, and goes away once it doesn't:
+The menu is four things, and anything above them is the widget having something
+to tell you, which goes away once it doesn't:
 
-- **Size** — Small, Medium, Large. Drag anywhere on the disc to move it.
+- **Lens** — whether the screen behind the widget gets **bent**. Your screen
+  shows through either way: with bending off the widget is simply transparent
+  around the hole, so what you see there is the real thing, undistorted, and
+  nothing is recorded. Bending it means capturing it first. See
+  [Permissions](#permissions).
+- **Size** — Small, Medium, Large. **Drag it by the hole** — the black disc in
+  the middle, not the glow around it. Everything outside the hole is
+  click-through, so the widget can sit over a window without swallowing clicks
+  meant for it.
 - **Style** — Inferno, Gargantua, M87\* donut, Face-on ember, Quasar, Blazar,
   Pure lens, Zen. These disagree wildly about how wide the accretion disk is
   (7 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
   until the bright part fits the frame. Every style fills the same widget
   without being clipped.
-  - Style ▸ **Cycle** moves it on to the next one **every hour** or **every
-    day**, through whichever styles you tick. The widget fades out, swaps and
-    fades back, because the styles disagree about too much for a cut to look
-    like anything but a fault. Which style is showing is worked out from the
-    clock rather than counted, so a Mac that slept for eight hours wakes up on
-    the right one instead of stepping through the eight it missed. Picking a
-    style by hand, or touching a slider, turns the rotation off — otherwise it
-    would take your choice away again at the next hour with nothing to say why.
+- **Cycle** moves it on to the next style every **5 minutes**, **30 minutes**,
+  **hour** or **day**, through whichever styles you tick. The widget fades out, swaps and
+  fades back, because the styles disagree about too much for a cut to look
+  like anything but a fault. Which style is showing is worked out from the
+  clock rather than counted, so a Mac that slept for eight hours wakes up on
+  the right one instead of stepping through the eight it missed. Switching it
+  on starts at the first style you ticked. Picking a
+  style by hand, or touching a slider, turns the rotation off — otherwise it
+  would take your choice away again at the next hour with nothing to say why.
 
 Everything else the widget does, it does without being asked:
 
-- **Drop something on it** — a file, a selection of text, a link, an image — and
-  watch it be eaten ([how, and why like that](#being-eaten)). **It touches
-  nothing**: the animation is the whole of it, and nothing is moved, copied or
-  deleted.
+- **Drop something on the hole** — a file, a selection of text, a link, an
+  image — and watch it be eaten ([how, and why like that](#being-eaten)). **By
+  default it touches nothing**: the animation is the whole of it, and nothing is
+  moved, copied or deleted. **Dropped files ▸ Move them to the Trash** makes it
+  a real one — it asks once before arming, plays the Finder's Trash sound at the
+  moment a file actually moves, and the menu-bar glyph carries a Trash badge for
+  as long as the mode is on, because the animation looks the same either way.
+  Only files are ever moved; text, links and images are still just drawn.
 - **Put the pointer inside** and its image is dragged toward the middle,
   stretched and reddened until it goes out. The real pointer is never touched;
   move back out and the image catches up.
 - **It can lens the live screen**, which is what Screen Recording is for — but
-  it does not ask on its own. A fresh install draws the hole and the disk over a
-  transparent background, and the menu offers **Bend the screen behind it…**;
-  macOS is only asked the moment you take it up. Turn it back off in
-  **Advanced…** under Lens. If you had already granted the permission before,
+  it does not ask on its own. A fresh install leaves the screen unbent, which
+  costs nothing and hides nothing: the widget is transparent everywhere the warp
+  would have been, so your desktop is right there behind an opaque hole and a
+  half-transparent disk. Picking **Lens ▸ Bend the screen behind it** is the
+  moment macOS is asked. The menu offers it once, in case you did not know what
+  you were missing, and stops offering as soon as you have picked something —
+  including picking not to. If you had already granted the permission before,
   nothing changes: the widget checks and comes up lensing as it always did.
 
 And the rest of the menu is the things that are not settings:
@@ -83,6 +100,8 @@ And the rest of the menu is the things that are not settings:
 - **Launch at login** — registers via `SMAppService`. Needs the signed bundle,
   so it does nothing under `swift run BlackHoleApp`.
 - **Check for Updates…** — see [Updates](#updates).
+- **About Black Hole** — the system's own About panel: version, build and
+  licence, from `Info.plist`.
 - **Advanced…** — a slider for every tunable, if the styles are not enough.
   Anything you tune can be kept: Style ▸ **Save current as…**. Custom looks are
   stored whole rather than as a sparse patch, because a look you saved is the

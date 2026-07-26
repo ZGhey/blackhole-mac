@@ -3,6 +3,14 @@
    メータ識別子であり、説明文は密度の高い天体物理の記述で、雑な翻訳はかえって
    害になる。 */
 
+"menu.lens"             = "レンズ";
+/* レンズをまだ選んでいない人にだけ、メニューの先頭に一度出る。 */
+"menu.lens.hint"        = "背後の画面を曲げさせる…";
+"menu.lens.bend"        = "背後の画面を曲げる";
+"menu.lens.plain"       = "曲げない(収録なし)";
+/* レンズのサブメニュー先頭に出る、押せない説明文。 */
+"menu.lens.explain"     = "どちらでも画面は見えている。曲げるのは前者だけ。";
+
 "menu.size"             = "サイズ";
 "menu.size.small"       = "小";
 "menu.size.medium"      = "中";
@@ -15,26 +23,29 @@
 
 "menu.cycle"            = "巡回";
 "menu.cycle.off"        = "オフ";
+"menu.cycle.5m"         = "5 分ごと";
+"menu.cycle.30m"        = "30 分ごと";
 "menu.cycle.hourly"     = "1 時間ごと";
 "menu.cycle.daily"      = "1 日ごと";
 "menu.cycle.all"        = "すべて選択";
 "menu.cycle.none"       = "選択を解除";
 
-/* 画面を収録していないときにメニューバーの先頭に出る。 */
-"menu.lens.enable"      = "背後の画面を曲げる…";
+"menu.swallow"          = "落としたファイル";
+"menu.swallow.animate"  = "アニメーションだけ";
+"menu.swallow.trash"    = "ゴミ箱に入れる";
 
 "menu.hide"             = "隠す (⌥⌘B)";
 "menu.show"             = "表示 (⌥⌘B)";
 "menu.checkUpdates"     = "アップデートを確認…";
 "menu.advanced"         = "詳細…";
 "menu.launchAtLogin"    = "ログイン時に起動";
+"menu.about"            = "Black Hole について";
 "menu.quit"             = "Black Hole を終了";
 
 "capture.starting"      = "画面キャプチャを開始しています…";
 "capture.denied"        = "画面収録の許可が拒否されました。「システム設定 ▸ プライバシーとセキュリティ ▸ 画面収録」で許可してから、レンズを有効にし直してください。";
 "capture.askAgain"      = "画面収録をもう一度リクエスト";
 "capture.openSettings"  = "プライバシー設定を開く…";
-"capture.useStars"      = "確認をやめ、何もない上に描く";
 
 "style.save.title"      = "この見た目を保存";
 "style.save.message"    = "現在のすべてのスライダーの値を、好きな名前で保存します。";
@@ -42,3 +53,11 @@
 "style.save.cancel"     = "キャンセル";
 /* 内蔵スタイルの上に保存するときの候補名。%@ は元のスタイル名。 */
 "style.save.copy"       = "%@ のコピー";
+
+"about.blurb"           = "デスクトップに置くシュヴァルツシルト・ブラックホール。すべてのピクセルが自分のヌル測地線を積分している。";
+"about.licence"         = "MIT ライセンス";
+
+"trash.confirm.title"   = "落としたファイルを本当に捨てますか?";
+"trash.confirm.message" = "これ以降、穴に落としたファイルはアニメーションが終わった時点でゴミ箱に移動します。テキスト、リンク、画像は描かれるだけのままです。ファイルはゴミ箱から戻せますし、この設定はメニューから解除できます。";
+"trash.confirm.ok"      = "ファイルをゴミ箱へ";
+"trash.confirm.cancel"  = "キャンセル";

@@ -3,6 +3,14 @@
    that have to match the shader and the docs, and its help text is dense
    astrophysics that a rough translation would do more harm than good to. */
 
+"menu.lens"             = "Lens";
+/* Shown once, at the top of the menu, to somebody who has never picked a lens. */
+"menu.lens.hint"        = "Bend the screen behind it…";
+"menu.lens.bend"        = "Bend the screen behind it";
+"menu.lens.plain"       = "Don't bend it (no recording)";
+/* Inert line at the top of the Lens submenu. */
+"menu.lens.explain"     = "Your screen shows through either way — only the first bends it.";
+
 "menu.size"             = "Size";
 "menu.size.small"       = "Small";
 "menu.size.medium"      = "Medium";
@@ -15,26 +23,29 @@
 
 "menu.cycle"            = "Cycle";
 "menu.cycle.off"        = "Off";
+"menu.cycle.5m"         = "Every 5 minutes";
+"menu.cycle.30m"        = "Every 30 minutes";
 "menu.cycle.hourly"     = "Every hour";
 "menu.cycle.daily"      = "Every day";
 "menu.cycle.all"        = "Select all";
 "menu.cycle.none"       = "Select none";
 
-/* Offered in the menu bar when the widget is not recording the screen. */
-"menu.lens.enable"      = "Bend the screen behind it…";
+"menu.swallow"          = "Dropped files";
+"menu.swallow.animate"  = "Just the animation";
+"menu.swallow.trash"    = "Move them to the Trash";
 
 "menu.hide"             = "Hide (⌥⌘B)";
 "menu.show"             = "Show (⌥⌘B)";
 "menu.checkUpdates"     = "Check for Updates…";
 "menu.advanced"         = "Advanced…";
 "menu.launchAtLogin"    = "Launch at login";
+"menu.about"            = "About Black Hole";
 "menu.quit"             = "Quit Black Hole";
 
 "capture.starting"      = "starting the screen capture…";
 "capture.denied"        = "Screen Recording permission denied. Grant it in System Settings ▸ Privacy & Security ▸ Screen Recording, then re-enable panel lensing.";
 "capture.askAgain"      = "Ask for Screen Recording again";
 "capture.openSettings"  = "Open Privacy Settings…";
-"capture.useStars"      = "Stop asking, draw over nothing";
 
 "style.save.title"      = "Save this look";
 "style.save.message"    = "Every slider as it stands now, under a name of your choosing.";
@@ -42,3 +53,11 @@
 "style.save.cancel"     = "Cancel";
 /* Suggested name when saving on top of a built-in style. %@ is its name. */
 "style.save.copy"       = "%@ copy";
+
+"about.blurb"           = "A Schwarzschild black hole for your desktop. Every pixel integrates its own null geodesic.";
+"about.licence"         = "MIT licence";
+
+"trash.confirm.title"   = "Really throw dropped files away?";
+"trash.confirm.message" = "From now on, a file dropped on the hole is moved to the Trash once the animation finishes. Text, links and images are still only drawn. You can put files back from the Trash, and turn this off again in the menu.";
+"trash.confirm.ok"      = "Move Files to Trash";
+"trash.confirm.cancel"  = "Cancel";

@@ -22,22 +22,12 @@ struct AdvancedPanel: View {
                         Text("Renderer failed").font(.headline).foregroundStyle(.red)
                     }
                 }
-                // Always shown, not only when the capture is complaining: this
-                // is the one place the lens can be turned back *off*. The menu
-                // bar only ever offers to turn it on, so that a widget doing its
-                // job stays a two-item menu.
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Picker("", selection: Binding(get: { model.lens },
-                                                      set: { model.lens = $0 })) {
-                            ForEach(LensSource.allCases) { source in
-                                Text(source.label).tag(source)
-                            }
-                        }
-                        .pickerStyle(.radioGroup)
-                        .labelsHidden()
-                        .help("Live screen records the screen behind the widget so that it can bend it. Without it the widget draws the hole and the disk over nothing, and macOS is never asked for Screen Recording.")
-                        if let status = model.captureStatus {
+                // Choosing the lens lives in the menu bar, where the permission
+                // it costs is worth putting in front of people. This is only the
+                // place that says when it is unhappy.
+                if let status = model.captureStatus {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(status).font(.caption).fixedSize(horizontal: false, vertical: true)
                             if model.captureDenied {
                                 HStack(spacing: 8) {
@@ -51,11 +41,10 @@ struct AdvancedPanel: View {
                                 }
                             }
                         }
+                        .padding(6)
+                    } label: {
+                        Text("Lens").font(.headline).foregroundStyle(.orange)
                     }
-                    .padding(6)
-                } label: {
-                    Text("Lens").font(.headline)
-                        .foregroundStyle(model.captureStatus == nil ? Color.primary : Color.orange)
                 }
 
                 ForEach(Specs.grouped(), id: \.0) { group, members in

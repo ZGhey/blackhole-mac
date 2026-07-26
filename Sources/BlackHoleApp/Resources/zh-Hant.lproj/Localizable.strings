@@ -2,6 +2,14 @@
    參數識別碼,要跟 shader 和文件對得上,而它的說明文字是很密的天體物理描述,
    粗糙的翻譯只會幫倒忙。 */
 
+"menu.lens"             = "透鏡";
+/* 只對從未選過透鏡的人顯示一次,在選單頂部。 */
+"menu.lens.hint"        = "讓它彎曲身後的螢幕…";
+"menu.lens.bend"        = "彎曲身後的螢幕";
+"menu.lens.plain"       = "不彎曲它(不錄螢幕)";
+/* 透鏡子選單頂部的說明文字,不可點。 */
+"menu.lens.explain"     = "兩種都看得見你的螢幕,只有前一種會把它彎曲。";
+
 "menu.size"             = "尺寸";
 "menu.size.small"       = "小";
 "menu.size.medium"      = "中";
@@ -14,26 +22,29 @@
 
 "menu.cycle"            = "輪替";
 "menu.cycle.off"        = "關閉";
+"menu.cycle.5m"         = "每 5 分鐘";
+"menu.cycle.30m"        = "每 30 分鐘";
 "menu.cycle.hourly"     = "每小時";
 "menu.cycle.daily"      = "每天";
 "menu.cycle.all"        = "全選";
 "menu.cycle.none"       = "全不選";
 
-/* 當沒有在錄製螢幕時,顯示在選單列頂部。 */
-"menu.lens.enable"      = "讓它彎曲身後的螢幕…";
+"menu.swallow"          = "丟進來的檔案";
+"menu.swallow.animate"  = "只播動畫";
+"menu.swallow.trash"    = "移到垃圾桶";
 
 "menu.hide"             = "隱藏 (⌥⌘B)";
 "menu.show"             = "顯示 (⌥⌘B)";
 "menu.checkUpdates"     = "檢查更新…";
 "menu.advanced"         = "進階…";
 "menu.launchAtLogin"    = "登入時啟動";
+"menu.about"            = "關於 Black Hole";
 "menu.quit"             = "結束 Black Hole";
 
 "capture.starting"      = "正在啟動螢幕擷取…";
 "capture.denied"        = "螢幕錄製權限遭拒。請在「系統設定 ▸ 隱私權與安全性 ▸ 螢幕錄製」中授權,然後重新啟用鏡頭。";
 "capture.askAgain"      = "重新要求螢幕錄製權限";
 "capture.openSettings"  = "打開隱私權設定…";
-"capture.useStars"      = "不再詢問,畫在空無之上";
 
 "style.save.title"      = "儲存這個外觀";
 "style.save.message"    = "把目前每一個滑桿的值,以你取的名稱儲存下來。";
@@ -41,3 +52,11 @@
 "style.save.cancel"     = "取消";
 /* 在內建樣式上儲存時建議的名稱。%@ 是原樣式名稱。 */
 "style.save.copy"       = "%@ 拷貝";
+
+"about.blurb"           = "一個待在你桌面上的史瓦西黑洞。每一個像素都在積分自己的零測地線。";
+"about.licence"         = "MIT 授權條款";
+
+"trash.confirm.title"   = "真的要把丟進來的檔案丟掉嗎?";
+"trash.confirm.message" = "從現在起,丟到洞上的檔案會在動畫播完之後被移到垃圾桶。文字、連結和圖片仍然只是畫出來而已。檔案可以從垃圾桶裡拿回來,這個開關也可以在選單裡關掉。";
+"trash.confirm.ok"      = "把檔案移到垃圾桶";
+"trash.confirm.cancel"  = "取消";

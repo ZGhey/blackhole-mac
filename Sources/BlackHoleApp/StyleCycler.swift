@@ -28,13 +28,24 @@ final class StyleCycler: ObservableObject {
 
     private static let intervalKey = "cycleInterval"
     private static let selectionKey = "cycleStyles"
+    private static let anchorKey = "cycleAnchor"
+
+    /// The slot the rotation counts from, so that switching the cycle on starts
+    /// at the first selected style instead of wherever the bare clock happened
+    /// to be. Re-taken when the cycle is switched on and when the interval
+    /// changes — an anchor is in the interval's own units and means nothing in
+    /// anybody else's. Deliberately *not* re-taken when the selection changes:
+    /// unticking a style you are not looking at should not throw you back to
+    /// the top of the list.
+    private var anchor: Int
 
     @Published var interval: CycleInterval {
         didSet {
             guard interval != oldValue else { return }
             UserDefaults.standard.set(interval.rawValue, forKey: Self.intervalKey)
-            // Landing on the style of the hour is the whole point; waiting up to
-            // an hour to find out whether the setting did anything is not.
+            reanchor()
+            // Landing on the first style is the whole point; waiting up to an
+            // hour to find out whether the setting did anything is not.
             restart(animated: true)
         }
     }
@@ -51,7 +62,23 @@ final class StyleCycler: ObservableObject {
     init(params: Params) {
         self.params = params
         let d = UserDefaults.standard
-        interval = (d.string(forKey: Self.intervalKey).flatMap(CycleInterval.init(rawValue:))) ?? .off
+        // Through a local: reading `self.interval` back here is reading a
+        // property of a half-initialized object, which the compiler is right to
+        // refuse.
+        let restored = (d.string(forKey: Self.intervalKey)
+                            .flatMap(CycleInterval.init(rawValue:))) ?? .off
+        interval = restored
+        // A cycle left running by an older build has no anchor stored. Taking
+        // one now rather than defaulting to zero means it starts from the top
+        // on this launch, which is the behaviour the anchor exists to give —
+        // and it has to be *written*, or every launch would take a fresh one
+        // and the rotation would restart from the top every time the app did.
+        let stored = d.object(forKey: Self.anchorKey) as? Int
+        let resolved = stored ?? StyleCycle.slot(at: Date(), interval: restored) ?? 0
+        anchor = resolved
+        if stored == nil && restored != .off {
+            d.set(resolved, forKey: Self.anchorKey)
+        }
         // No stored selection means nobody has ever opened this menu, and an
         // empty rotation would make turning cycling on do nothing at all. Every
         // style is the only default that shows what the feature is.
@@ -122,6 +149,14 @@ final class StyleCycler: ObservableObject {
 
     // ------------------------------------------------------------ movement --
 
+    /// Count from here, so the next thing shown is the first selected style.
+    private func reanchor() {
+        guard interval != .off,
+              let slot = StyleCycle.slot(at: Date(), interval: interval) else { return }
+        anchor = slot
+        UserDefaults.standard.set(slot, forKey: Self.anchorKey)
+    }
+
     /// Catch up to the clock and re-aim the timer at the next boundary. Every
     /// change of interval, selection or parked state wants exactly this pair,
     /// and in this order: the style first, so the widget is never showing the
@@ -135,7 +170,8 @@ final class StyleCycler: ObservableObject {
     private func sync(animated: Bool) {
         guard interval != .off, !suspended else { return }
         let names = rotation
-        guard let i = StyleCycle.index(at: Date(), interval: interval, count: names.count),
+        guard let i = StyleCycle.index(at: Date(), interval: interval,
+                                       count: names.count, anchor: anchor),
               names[i] != params.styleName
         else { return }
         let target = names[i]
@@ -184,9 +220,11 @@ final class StyleCycler: ObservableObject {
 extension CycleInterval {
     var label: String {
         switch self {
-        case .off:    return L("menu.cycle.off")
-        case .hourly: return L("menu.cycle.hourly")
-        case .daily:  return L("menu.cycle.daily")
+        case .off:            return L("menu.cycle.off")
+        case .fiveMinutes:    return L("menu.cycle.5m")
+        case .thirtyMinutes:  return L("menu.cycle.30m")
+        case .hourly:         return L("menu.cycle.hourly")
+        case .daily:          return L("menu.cycle.daily")
         }
     }
 }
