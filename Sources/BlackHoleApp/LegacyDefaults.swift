@@ -27,6 +27,14 @@ enum LegacyDefaults {
         // Only the keys still read. The settings that lost their menu items are
         // pinned to their defaults now, so bringing their old values across
         // would restore something nobody can see or change.
+        //
+        // "lens" is read again and still deliberately absent: TCC is keyed to
+        // the bundle identifier and cannot be migrated, so a rename revokes
+        // Screen Recording no matter what. Carrying `.screen` across would have
+        // the widget reach for a capture it no longer has permission for on the
+        // first launch, which is exactly the prompt this app now waits to be
+        // asked for. Left out, the preflight in AppModel sees the truth — not
+        // granted — and comes up quiet with the offer in the menu.
         var keys = ["tunables", "style", "customStyles", "size", "hidden", "lastDisplay"]
         // Positions are per display, so the key names are not known in advance.
         keys += old.dictionaryRepresentation().keys.filter { $0.hasPrefix("origin-") }

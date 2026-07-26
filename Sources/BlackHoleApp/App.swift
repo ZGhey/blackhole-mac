@@ -15,6 +15,7 @@ enum Shared {
     static let params: Params = { _ = migrated; return Params() }()
     static let model: AppModel = { _ = migrated; return AppModel() }()
     static let widget = PanelController(params: params, model: model)
+    static let cycler = StyleCycler(params: params)
     static let advanced = AdvancedWindow()
     static let updater = Updater()
 }
@@ -39,7 +40,7 @@ struct BlackHoleApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(params: Shared.params, model: Shared.model)
+            MenuContent(params: Shared.params, model: Shared.model, cycler: Shared.cycler)
         } label: {
             Image(nsImage: Self.menuIcon)
         }
@@ -63,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Shared.model.onPositionChange = { Shared.widget.positionModeChanged() }
             Shared.model.onSizeChange = { Shared.widget.sizeChanged() }
             Shared.model.onHiddenChange = { Shared.widget.hiddenChanged() }
+            // The cycler owns no timer while the widget is parked, and hides its
+            // switches behind the panel's fade. Both are wired here rather than
+            // held as references, so neither side has to know the other exists.
+            Shared.widget.onRunningChange = { Shared.cycler.setSuspended(!$0) }
+            Shared.cycler.performSwitch = { Shared.widget.crossfadeStyle($0) }
             HotKey.install { Shared.model.hidden.toggle() }
             Proximity.shared.setEnabled(Shared.model.noticesPointer)
             Shared.widget.isEnabled = true
@@ -230,14 +236,34 @@ final class AppModel: ObservableObject {
         size = d.object(forKey: "size") as? Double ?? WidgetSize.medium.points
         launchAtLogin = LoginItem.isEnabled   // system state, not a stored preference
 
+        // The lens is restored, and when there is nothing to restore it is
+        // *inferred* rather than defaulted.
+        //
+        // Pinning it to `.screen` meant the very first launch reached for
+        // ScreenCaptureKit and macOS threw a Screen Recording prompt at somebody
+        // who had not asked for anything yet. Defaulting it to `.stars` instead
+        // would fix that and silently demote every existing user who had already
+        // granted the permission — an update that turns your lensed screen into
+        // a floating disk reads as a bug, not as a privacy improvement.
+        //
+        // `CGPreflightScreenCaptureAccess` answers without prompting, so the
+        // absent case can be decided on what is actually true: already granted
+        // means the lens works and should be on, not granted means start quiet
+        // and let the menu offer it. Reading the stored value first is what
+        // keeps that inference from overruling somebody who turned the lens off
+        // on purpose — permission stays granted after they do.
+        if let raw = d.string(forKey: "lens"), let stored = LensSource(rawValue: raw) {
+            lens = stored
+        } else {
+            lens = CGPreflightScreenCaptureAccess() ? .screen : .stars
+        }
+
         // Deliberately *not* restored. These lost their menu items, so a stored
         // value could only ever be one somebody set before and can no longer
-        // undo — "stars only" with no way back to the live lens, or dropped
-        // files going to the Trash with nothing on screen saying so. The
-        // properties and their persistence stay, so restoring a menu item
-        // restores the setting whole.
+        // undo — dropped files going to the Trash with nothing on screen saying
+        // so. The properties and their persistence stay, so restoring a menu
+        // item restores the setting whole.
         frameRate = .fps60
-        lens = .screen
         audioReactive = false
         position = .free
         swallowAction = .animateOnly
@@ -263,10 +289,21 @@ final class AppModel: ObservableObject {
 struct MenuContent: View {
     @ObservedObject var params: Params
     @ObservedObject var model: AppModel
+    @ObservedObject var cycler: StyleCycler
     @ObservedObject var updater = Shared.updater
 
     var body: some View {
-        if let status = model.captureStatus {
+        // The top of the menu is the "only when there is something to say" band.
+        // Offering the lens belongs in it: a widget that is not recording the
+        // screen is a widget with an obvious thing left to offer, and one that
+        // is has nothing to report unless the capture is unhappy. Turning the
+        // lens back *off* is not here on purpose — it is a rare thing to want,
+        // and a permanent line in a two-item menu is what this menu is built to
+        // avoid. It lives in the Advanced panel instead.
+        if model.lens == .stars {
+            Button(L("menu.lens.enable")) { model.lens = .screen }
+            Divider()
+        } else if let status = model.captureStatus {
             Text(status)
             if model.captureDenied {
                 Button(L("capture.askAgain")) {
@@ -277,6 +314,9 @@ struct MenuContent: View {
                         NSWorkspace.shared.open(url)
                     }
                 }
+                // Somebody who has said no twice needs a way out that is not a
+                // trip to System Settings.
+                Button(L("capture.useStars")) { model.lens = .stars }
             }
             Divider()
         }
@@ -291,20 +331,48 @@ struct MenuContent: View {
 
         Menu(L("menu.style")) {
             ForEach(Specs.styles, id: \.0) { name, _ in
-                Button(check(params.styleName == name) + name) { params.apply(style: name) }
+                Button(check(params.styleName == name) + name) { pick(name) }
             }
             if !params.customStyleNames.isEmpty {
                 Divider()
                 ForEach(params.customStyleNames, id: \.self) { name in
-                    Button(check(params.styleName == name) + name) { params.apply(style: name) }
+                    Button(check(params.styleName == name) + name) { pick(name) }
                 }
             }
             Divider()
-            Button(L("menu.style.saveAs")) { StylePrompt.saveCurrent(into: params) }
+            // Saving does not stop the rotation. It is not a style change — the
+            // look on screen is the one you were already looking at — and the
+            // saved style joining the rotation is the point of saving it.
+            Button(L("menu.style.saveAs")) {
+                if let saved = StylePrompt.saveCurrent(into: params) {
+                    cycler.styleAdded(saved)
+                }
+            }
             if params.customStyles[params.styleName] != nil {
                 Button(L("menu.style.delete", params.styleName)) {
-                    params.deleteStyle(named: params.styleName)
+                    let name = params.styleName
+                    params.deleteStyle(named: name)
+                    cycler.styleRemoved(name)
                 }
+            }
+            Divider()
+            // Under Style, not beside it: what rotates is styles, and the top
+            // level of this menu is meant to stay two items long.
+            Menu(L("menu.cycle")) {
+                ForEach(CycleInterval.allCases) { each in
+                    Button(check(cycler.interval == each) + each.label) {
+                        cycler.interval = each
+                    }
+                }
+                Divider()
+                ForEach(cycler.allStyleNames, id: \.self) { name in
+                    Button(check(cycler.selected.contains(name)) + name) {
+                        cycler.toggle(name)
+                    }
+                }
+                Divider()
+                Button(L("menu.cycle.all")) { cycler.selectAll() }
+                Button(L("menu.cycle.none")) { cycler.selectNone() }
             }
         }
 
@@ -333,6 +401,15 @@ struct MenuContent: View {
     /// SwiftUI menus in a MenuBarExtra do not render a selection state on
     /// Buttons, so the current choice is marked in the title itself.
     private func check(_ on: Bool) -> String { on ? "✓ " : "   " }
+
+    /// Choosing a style by hand stops the rotation. Leaving it running would
+    /// take the choice away again at the next boundary with nothing on screen
+    /// to say why — and the cycler's own switches must not come through here,
+    /// or the first one would turn the cycle off.
+    private func pick(_ name: String) {
+        cycler.stop()
+        params.apply(style: name)
+    }
 }
 
 // ------------------------------------------------------- advanced window --
@@ -352,7 +429,8 @@ final class AdvancedWindow {
             w.title = "Black Hole — Advanced"
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(
-                rootView: AdvancedPanel(params: Shared.params, model: Shared.model))
+                rootView: AdvancedPanel(params: Shared.params, model: Shared.model,
+                                        cycler: Shared.cycler))
             w.center()
             window = w
         }
@@ -368,7 +446,9 @@ final class AdvancedWindow {
 /// is a plain modal alert — the one moment the app is allowed to interrupt.
 @MainActor
 enum StylePrompt {
-    static func saveCurrent(into params: Params) {
+    /// The name it was saved under, or nil if the sheet was cancelled.
+    @discardableResult
+    static func saveCurrent(into params: Params) -> String? {
         let alert = NSAlert()
         alert.messageText = L("style.save.title")
         alert.informativeText = L("style.save.message")
@@ -380,8 +460,10 @@ enum StylePrompt {
         alert.accessoryView = field
         NSApp.activate(ignoringOtherApps: true)
         alert.window.initialFirstResponder = field
-        if alert.runModal() == .alertFirstButtonReturn {
-            params.saveCurrentStyle(named: field.stringValue)
-        }
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        params.saveCurrentStyle(named: field.stringValue)
+        // `saveCurrentStyle` trims and rejects an empty name, so the name that
+        // stuck is the one on `params`, not the one in the field.
+        return params.customStyles[params.styleName] != nil ? params.styleName : nil
     }
 }

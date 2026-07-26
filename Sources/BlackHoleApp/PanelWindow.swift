@@ -59,6 +59,11 @@ final class PanelController {
     private let params: Params
     private let model: AppModel
 
+    /// Fired whenever the widget parks or unparks. The style cycler hangs off
+    /// this rather than the controller knowing about it, for the same reason
+    /// `AppModel` does not know about the controller.
+    var onRunningChange: ((Bool) -> Void)?
+
     init(params: Params, model: AppModel) {
         self.params = params
         self.model = model
@@ -189,7 +194,41 @@ final class PanelController {
             panel?.ignoresMouseEvents = true
             ScreenCapture.shared.stop()
         }
+        onRunningChange?(want)
         Self.log.notice("\(want ? "running" : "parked", privacy: .public) (\(reason, privacy: .public))")
+    }
+
+    /// Swap the style behind a fade to nothing and back.
+    ///
+    /// The styles disagree about everything — `DISK_TEMP` 5500 against 18000,
+    /// `DISK_OUTER` 8 against 16 — so a cut is a visible jolt, and interpolating
+    /// between two of them is worse: the hole would be seen to breathe as the
+    /// fit rescales it, which reads as a fault rather than as a transition. Out
+    /// and back in, with the swap in the frame nobody can see, needs neither.
+    ///
+    /// Reduce Motion takes the fade away but not the switch. Same line the rest
+    /// of the widget draws: the disk still turns under it, because the content
+    /// is not the thing that setting is asking to stop.
+    func crossfadeStyle(_ change: @escaping () -> Void) {
+        guard let panel, running, !model.hidden, !SystemState.shared.reduceMotion else {
+            change()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.styleFade
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                change()
+                // A hide that landed mid-fade owns the alpha now; fading back in
+                // over it would undo the thing the user just asked for.
+                guard let self, let panel = self.panel, !self.model.hidden else { return }
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = Self.styleFade
+                    panel.animator().alphaValue = 1
+                }
+            }
+        }
     }
 
     /// Hiding used to be cosmetic: alpha 0, everything else still going. That is
@@ -249,6 +288,10 @@ final class PanelController {
     }
 
     private static let fade: TimeInterval = 0.25
+    /// Longer than the hide fade: hiding is something you asked for a moment
+    /// ago and want to see happen, a style switch arrives unannounced and should
+    /// not snap.
+    private static let styleFade: TimeInterval = 0.6
 
     func lensChanged() {
         guard isEnabled, model.lens == .screen else {

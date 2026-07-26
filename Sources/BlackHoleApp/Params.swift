@@ -66,7 +66,12 @@ final class Params: ObservableObject {
     func deleteStyle(named name: String) {
         guard customStyles.removeValue(forKey: name) != nil else { return }
         UserDefaults.standard.set(customStyles, forKey: Self.customKey)
-        if styleName == name { styleName = Specs.styles[0].0 }
+        // Falling back has to *apply* the style, not just rename to it. Moving
+        // `styleName` alone left the widget rendering the deleted look under a
+        // tick that claimed it was showing Inferno — and anything that decides
+        // whether to act by comparing against `styleName`, the style cycler
+        // included, then believed the lie.
+        if styleName == name { apply(style: Specs.styles[0].0) }
     }
 
     func resetAll() {

@@ -7,6 +7,7 @@ import SwiftUI
 struct AdvancedPanel: View {
     @ObservedObject var params: Params
     @ObservedObject var model: AppModel
+    @ObservedObject var cycler: StyleCycler
 
     var body: some View {
         ScrollView {
@@ -21,9 +22,22 @@ struct AdvancedPanel: View {
                         Text("Renderer failed").font(.headline).foregroundStyle(.red)
                     }
                 }
-                if let status = model.captureStatus {
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 6) {
+                // Always shown, not only when the capture is complaining: this
+                // is the one place the lens can be turned back *off*. The menu
+                // bar only ever offers to turn it on, so that a widget doing its
+                // job stays a two-item menu.
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: Binding(get: { model.lens },
+                                                      set: { model.lens = $0 })) {
+                            ForEach(LensSource.allCases) { source in
+                                Text(source.label).tag(source)
+                            }
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+                        .help("Live screen records the screen behind the widget so that it can bend it. Without it the widget draws the hole and the disk over nothing, and macOS is never asked for Screen Recording.")
+                        if let status = model.captureStatus {
                             Text(status).font(.caption).fixedSize(horizontal: false, vertical: true)
                             if model.captureDenied {
                                 HStack(spacing: 8) {
@@ -37,17 +51,18 @@ struct AdvancedPanel: View {
                                 }
                             }
                         }
-                        .padding(6)
-                    } label: {
-                        Text("Lens").font(.headline).foregroundStyle(.orange)
                     }
+                    .padding(6)
+                } label: {
+                    Text("Lens").font(.headline)
+                        .foregroundStyle(model.captureStatus == nil ? Color.primary : Color.orange)
                 }
 
                 ForEach(Specs.grouped(), id: \.0) { group, members in
                     GroupBox {
                         VStack(spacing: 6) {
                             ForEach(members, id: \.self) { name in
-                                ParamRow(params: params, name: name)
+                                ParamRow(params: params, cycler: cycler, name: name)
                             }
                         }
                         .padding(6)
@@ -57,6 +72,7 @@ struct AdvancedPanel: View {
                 }
 
                 Button("Reset everything") {
+                    cycler.stop()
                     params.resetAll()
                 }
                 .padding(.top, 4)
@@ -69,6 +85,7 @@ struct AdvancedPanel: View {
 
 private struct ParamRow: View {
     @ObservedObject var params: Params
+    @ObservedObject var cycler: StyleCycler
     let name: String
 
     private var spec: ParamSpec { Specs.spec(name) }
@@ -83,6 +100,7 @@ private struct ParamRow: View {
                     .foregroundStyle(.secondary)
                 if abs(params[name] - spec.def) > 1e-9 {
                     Button {
+                        cycler.stop()
                         params[name] = spec.def
                         params.save()
                     } label: {
@@ -92,10 +110,15 @@ private struct ParamRow: View {
                     .help("Reset to \(format(spec.def))")
                 }
             }
+            // Tuning by hand stops the style rotation, on the grab rather than
+            // on the release: a slider you are still holding when the hour turns
+            // would otherwise be dragged out from under you.
             Slider(
                 value: Binding(get: { params[name] }, set: { params[name] = $0 }),
                 in: spec.range,
-                onEditingChanged: { editing in if !editing { params.save() } }
+                onEditingChanged: { editing in
+                    if editing { cycler.stop() } else { params.save() }
+                }
             )
         }
         .help(spec.help)

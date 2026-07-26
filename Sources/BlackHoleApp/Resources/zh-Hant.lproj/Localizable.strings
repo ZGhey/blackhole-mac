@@ -12,6 +12,16 @@
 /* %@ 是要刪除的樣式名稱。 */
 "menu.style.delete"     = "刪除「%@」";
 
+"menu.cycle"            = "輪替";
+"menu.cycle.off"        = "關閉";
+"menu.cycle.hourly"     = "每小時";
+"menu.cycle.daily"      = "每天";
+"menu.cycle.all"        = "全選";
+"menu.cycle.none"       = "全不選";
+
+/* 當沒有在錄製螢幕時,顯示在選單列頂部。 */
+"menu.lens.enable"      = "讓它彎曲身後的螢幕…";
+
 "menu.hide"             = "隱藏 (⌥⌘B)";
 "menu.show"             = "顯示 (⌥⌘B)";
 "menu.checkUpdates"     = "檢查更新…";
@@ -23,6 +33,7 @@
 "capture.denied"        = "螢幕錄製權限遭拒。請在「系統設定 ▸ 隱私權與安全性 ▸ 螢幕錄製」中授權,然後重新啟用鏡頭。";
 "capture.askAgain"      = "重新要求螢幕錄製權限";
 "capture.openSettings"  = "打開隱私權設定…";
+"capture.useStars"      = "不再詢問,畫在空無之上";
 
 "style.save.title"      = "儲存這個外觀";
 "style.save.message"    = "把目前每一個滑桿的值,以你取的名稱儲存下來。";

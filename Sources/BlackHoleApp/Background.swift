@@ -8,6 +8,13 @@ enum LensSource: String, CaseIterable, Identifiable {
     case screen
     /// Nothing behind it: shadow, accretion disk and the procedural starfield
     /// only, with the rest of the widget transparent.
+    ///
+    /// The case is still called `stars` because the stored value is, but the
+    /// label is not: this is the state the widget launches in before anybody has
+    /// granted Screen Recording, and what it actually shows there is the disk
+    /// over a transparent background — seven of the eight built-in styles set
+    /// `STAR_GAIN` to 0, so promising stars would be a lie. What the user is
+    /// choosing between is whether the screen gets recorded at all.
     case stars
 
     var id: String { rawValue }
@@ -15,13 +22,13 @@ enum LensSource: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .screen: return "Live screen"
-        case .stars:  return "Stars only"
+        case .stars:  return "No screen recording"
         }
     }
 }
 
 /// A 1×1 stand-in used until the first captured frame lands, and as the whole
-/// background in "stars only".
+/// background when the screen is not being recorded.
 enum PlaceholderTexture {
     static func make(device: MTLDevice) -> MTLTexture {
         let desc = MTLTextureDescriptor.texture2DDescriptor(

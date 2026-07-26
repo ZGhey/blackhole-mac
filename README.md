@@ -44,7 +44,8 @@ To build it yourself instead, see [Building it](#building-it).
 
 ## Using it
 
-The menu has two things in it, because two is what it needs:
+The menu has two settings in it, because two is what it needs — anything above
+them is the widget having something to tell you, and goes away once it doesn't:
 
 - **Size** — Small, Medium, Large. Drag anywhere on the disc to move it.
 - **Style** — Inferno, Gargantua, M87\* donut, Face-on ember, Quasar, Blazar,
@@ -52,6 +53,14 @@ The menu has two things in it, because two is what it needs:
   (7 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
   until the bright part fits the frame. Every style fills the same widget
   without being clipped.
+  - Style ▸ **Cycle** moves it on to the next one **every hour** or **every
+    day**, through whichever styles you tick. The widget fades out, swaps and
+    fades back, because the styles disagree about too much for a cut to look
+    like anything but a fault. Which style is showing is worked out from the
+    clock rather than counted, so a Mac that slept for eight hours wakes up on
+    the right one instead of stepping through the eight it missed. Picking a
+    style by hand, or touching a slider, turns the rotation off — otherwise it
+    would take your choice away again at the next hour with nothing to say why.
 
 Everything else the widget does, it does without being asked:
 
@@ -62,9 +71,12 @@ Everything else the widget does, it does without being asked:
 - **Put the pointer inside** and its image is dragged toward the middle,
   stretched and reddened until it goes out. The real pointer is never touched;
   move back out and the image catches up.
-- **It lenses the live screen**, which is what Screen Recording is for. Without
-  that permission it draws the hole and the starfield over a transparent
-  background and carries on.
+- **It can lens the live screen**, which is what Screen Recording is for — but
+  it does not ask on its own. A fresh install draws the hole and the disk over a
+  transparent background, and the menu offers **Bend the screen behind it…**;
+  macOS is only asked the moment you take it up. Turn it back off in
+  **Advanced…** under Lens. If you had already granted the permission before,
+  nothing changes: the widget checks and comes up lensing as it always did.
 
 And the rest of the menu is the things that are not settings:
 
@@ -92,8 +104,9 @@ And the rest of the menu is the things that are not settings:
 
 ## Permissions
 
-**Screen Recording** is needed for the live-screen lens. Grant it when macOS
-asks. Nothing else is requested — not Accessibility, not input monitoring.
+**Screen Recording** is needed for the live-screen lens, and is never asked for
+until you turn that lens on. Nothing else is requested — not Accessibility, not
+input monitoring.
 
 It is worth knowing why the build signs itself. macOS keys a TCC grant to the
 app's *designated requirement*, and an ad-hoc signature produces one built from

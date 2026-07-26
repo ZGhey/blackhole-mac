@@ -36,7 +36,7 @@ public enum Specs {
         "LENS_FALLOFF":  ParamSpec(1.2...40.0, "Black hole", 2.0, "How far the lensing reaches, in shadow radii. Real bending falls off as 1/b and never stops; this fades it out. Pull it in and the warp hugs the ring instead of filling the widget — but raise DISK_ROOM with it, or the space it vacates is left as a near-undistorted copy of the screen rather than as ring"),
         "DRIFT":         ParamSpec(0.0...0.12, "Black hole", 0.05, "How far the hole wanders inside the widget, as a fraction of its height. The lensed halo is a static mapping of whatever is behind — it only moves when the warp field itself does, so this is the only thing keeping the outer rings alive. Past ~0.06 the disk's outer edge starts running into the silhouette's taper"),
         "DRIFT_SPEED":   ParamSpec(0.0...3.0, "Black hole", 2.0, "How fast it wanders. The path is two incommensurate sines per axis, so it never repeats"),
-        "STAR_GAIN":     ParamSpec(0.0...2.0, "Black hole", 0.0, "Brightness of the lensed starfield (0 = off). Worth raising with the “Stars only” lens, where there is nothing else to bend"),
+        "STAR_GAIN":     ParamSpec(0.0...2.0, "Black hole", 0.0, "Brightness of the lensed starfield (0 = off). Worth raising when the screen is not being recorded, where there is nothing else to bend"),
 
         "DISK_INNER":    ParamSpec(1.6...8.0, "Accretion disk", 1.8, "Inner edge in Schwarzschild radii; 3 is the ISCO (innermost stable circular orbit)"),
         "DISK_OUTER":    ParamSpec(4.0...20.0, "Accretion disk", 8.0, "Outer edge in Schwarzschild radii. The hole is scaled down automatically if this would push the disk past the widget's edge"),

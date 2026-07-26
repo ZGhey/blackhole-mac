@@ -250,6 +250,89 @@ do {
           "the background sampler has lost its mip filtering or its derivatives")
 }
 
+print("\ncycle — the style rotation is a pure function of the clock")
+do {
+    func want(_ name: String, _ got: String, _ expected: String, _ note: String) {
+        let ok = got == expected
+        print("  \(pad(name, 34)) \(pad(got, 9))  \(ok ? "ok" : "FAIL (want \(expected))")")
+        if !ok { failures.append("\(name): \(got) vs \(expected) — \(note)") }
+    }
+    // The two walks below take their expected value from their own first
+    // element, so what they assert is the *stepping* — one style per interval,
+    // wrapping at the end — and not which style the rotation happens to start
+    // on. That is deliberate: where it starts is the epoch's business, and
+    // pinning it here would make the check a golden value nobody could read.
+    var cal = Calendar(identifier: .gregorian)
+    // A zone that observes DST, and one whose local midnight is nowhere near
+    // UTC midnight: between them, an implementation that quietly used UTC for
+    // the daily interval, or the calendar for the hourly one, shows up.
+    cal.timeZone = TimeZone(identifier: "America/New_York")!
+    let hour: TimeInterval = 3600
+
+    // Hourly advances exactly one slot an hour and wraps at the end.
+    let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    let walk = (0..<5).map { StyleCycle.index(at: t0.addingTimeInterval(Double($0) * hour),
+                                              interval: .hourly, count: 3, calendar: cal)! }
+    want("hourly: 5 h over 3 styles", walk.map(String.init).joined(),
+         (0..<5).map { String((walk[0] + $0) % 3) }.joined(),
+         "the rotation must step one style an hour and wrap")
+
+    // Eight hours asleep lands on the style of the hour, not eight steps on
+    // from wherever it was — this is what makes the cycle need no stored state.
+    want("hourly: 8 h gap == 8 steps",
+         String(StyleCycle.index(at: t0.addingTimeInterval(8 * hour),
+                                 interval: .hourly, count: 5, calendar: cal)!),
+         String((StyleCycle.index(at: t0, interval: .hourly, count: 5, calendar: cal)! + 8) % 5),
+         "the index must be computed from the clock, never accumulated")
+
+    // Daylight saving. 2025-03-09 is a 23-hour day in New York, and that is the
+    // only thing about the daily interval that can actually go wrong: the index
+    // sequence comes out the same either way, so what discriminates a correct
+    // implementation is *when* it switches. Adding 86400 seconds to the last
+    // midnight would put this one switch at 01:00 and leave every switch after
+    // it an hour out.
+    let dstMidnight = Date(timeIntervalSince1970: 1_741_496_400)   // 2025-03-09 00:00 EST
+    let dstNext = StyleCycle.nextBoundary(after: dstMidnight.addingTimeInterval(hour),
+                                          interval: .daily, calendar: cal)!
+    want("daily: the 23-hour day is 23 h",
+         String(format: "%.1f", dstNext.timeIntervalSince(dstMidnight) / hour), "23.0",
+         "daily must land on the next local midnight, not 86400 seconds on")
+
+    // Consecutive local midnights are consecutive styles, wrapping at the end.
+    let midnights = (0..<4).map { cal.date(byAdding: .day, value: $0, to: dstMidnight)! }
+    let dstWalk = midnights.map { StyleCycle.index(at: $0, interval: .daily,
+                                                   count: 3, calendar: cal)! }
+    want("daily: 4 days over 3 styles", dstWalk.map(String.init).joined(),
+         (0..<4).map { String((dstWalk[0] + $0) % 3) }.joined(),
+         "the rotation must step one style a day and wrap")
+
+    // Dates before 1970 make the slot negative, and Swift's % keeps the sign.
+    let ancient = Date(timeIntervalSince1970: -5 * hour)
+    let old = StyleCycle.index(at: ancient, interval: .hourly, count: 3, calendar: cal)!
+    want("hourly: index before 1970 in range", String(old >= 0 && old < 3), "true",
+         "a negative remainder would index out of the rotation")
+
+    // A boundary lands strictly in the future, or the timer refires forever.
+    let onBoundary = Date(timeIntervalSince1970: 1_700_000_000 - 1_700_000_000.truncatingRemainder(dividingBy: 3600))
+    let next = StyleCycle.nextBoundary(after: onBoundary, interval: .hourly, calendar: cal)!
+    want("hourly: boundary is in the future", String(next > onBoundary), "true",
+         "a boundary equal to now spins the switch timer")
+    want("hourly: boundary lands on the hour",
+         String(next.timeIntervalSince1970.truncatingRemainder(dividingBy: 3600) == 0), "true",
+         "hourly must switch on the hour, not on whenever the app launched")
+    want("daily: boundary is a local midnight",
+         String(cal.startOfDay(for: dstNext) == dstNext && dstNext > dstMidnight), "true",
+         "daily must switch at local midnight, not at UTC midnight")
+
+    // Nothing selected is not a crash, it is nothing to rotate.
+    want("empty rotation yields no index",
+         String(StyleCycle.index(at: t0, interval: .hourly, count: 0, calendar: cal) == nil), "true",
+         "an empty selection must not divide by zero")
+    want("off yields no index",
+         String(StyleCycle.index(at: t0, interval: .off, count: 3, calendar: cal) == nil), "true",
+         "off must not pick a style")
+}
+
 print("")
 if failures.isEmpty {
     print("all clear")

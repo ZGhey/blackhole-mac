@@ -13,6 +13,16 @@
 /* %@ is the name of the saved style being removed. */
 "menu.style.delete"     = "Delete “%@”";
 
+"menu.cycle"            = "Cycle";
+"menu.cycle.off"        = "Off";
+"menu.cycle.hourly"     = "Every hour";
+"menu.cycle.daily"      = "Every day";
+"menu.cycle.all"        = "Select all";
+"menu.cycle.none"       = "Select none";
+
+/* Offered in the menu bar when the widget is not recording the screen. */
+"menu.lens.enable"      = "Bend the screen behind it…";
+
 "menu.hide"             = "Hide (⌥⌘B)";
 "menu.show"             = "Show (⌥⌘B)";
 "menu.checkUpdates"     = "Check for Updates…";
@@ -24,6 +34,7 @@
 "capture.denied"        = "Screen Recording permission denied. Grant it in System Settings ▸ Privacy & Security ▸ Screen Recording, then re-enable panel lensing.";
 "capture.askAgain"      = "Ask for Screen Recording again";
 "capture.openSettings"  = "Open Privacy Settings…";
+"capture.useStars"      = "Stop asking, draw over nothing";
 
 "style.save.title"      = "Save this look";
 "style.save.message"    = "Every slider as it stands now, under a name of your choosing.";

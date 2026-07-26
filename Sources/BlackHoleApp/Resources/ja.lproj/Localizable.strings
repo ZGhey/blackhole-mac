@@ -13,6 +13,16 @@
 /* %@ は削除するスタイル名。 */
 "menu.style.delete"     = "「%@」を削除";
 
+"menu.cycle"            = "巡回";
+"menu.cycle.off"        = "オフ";
+"menu.cycle.hourly"     = "1 時間ごと";
+"menu.cycle.daily"      = "1 日ごと";
+"menu.cycle.all"        = "すべて選択";
+"menu.cycle.none"       = "選択を解除";
+
+/* 画面を収録していないときにメニューバーの先頭に出る。 */
+"menu.lens.enable"      = "背後の画面を曲げる…";
+
 "menu.hide"             = "隠す (⌥⌘B)";
 "menu.show"             = "表示 (⌥⌘B)";
 "menu.checkUpdates"     = "アップデートを確認…";
@@ -24,6 +34,7 @@
 "capture.denied"        = "画面収録の許可が拒否されました。「システム設定 ▸ プライバシーとセキュリティ ▸ 画面収録」で許可してから、レンズを有効にし直してください。";
 "capture.askAgain"      = "画面収録をもう一度リクエスト";
 "capture.openSettings"  = "プライバシー設定を開く…";
+"capture.useStars"      = "確認をやめ、何もない上に描く";
 
 "style.save.title"      = "この見た目を保存";
 "style.save.message"    = "現在のすべてのスライダーの値を、好きな名前で保存します。";

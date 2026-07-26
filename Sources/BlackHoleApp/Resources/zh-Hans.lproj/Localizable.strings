@@ -12,6 +12,16 @@
 /* %@ 是要删除的样式名。 */
 "menu.style.delete"     = "删除“%@”";
 
+"menu.cycle"            = "轮换";
+"menu.cycle.off"        = "关闭";
+"menu.cycle.hourly"     = "每小时";
+"menu.cycle.daily"      = "每天";
+"menu.cycle.all"        = "全选";
+"menu.cycle.none"       = "全不选";
+
+/* 当没有在录制屏幕时,显示在菜单栏顶部。 */
+"menu.lens.enable"      = "让它弯曲身后的屏幕…";
+
 "menu.hide"             = "隐藏 (⌥⌘B)";
 "menu.show"             = "显示 (⌥⌘B)";
 "menu.checkUpdates"     = "检查更新…";
@@ -23,6 +33,7 @@
 "capture.denied"        = "屏幕录制权限被拒绝。请在“系统设置 ▸ 隐私与安全性 ▸ 屏幕录制”中授权,然后重新启用镜头。";
 "capture.askAgain"      = "重新请求屏幕录制权限";
 "capture.openSettings"  = "打开隐私设置…";
+"capture.useStars"      = "不再询问,画在空无之上";
 
 "style.save.title"      = "存储这个外观";
 "style.save.message"    = "把当前每一个滑块的值,以你起的名字保存下来。";
