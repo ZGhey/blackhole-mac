@@ -116,12 +116,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotKey.install { Shared.model.hidden.toggle() }
             Proximity.shared.setEnabled(Shared.model.noticesPointer)
             Shared.widget.isEnabled = true
+            trapExitSignals()
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false   // closing the Advanced window must not kill the widget
     }
+
+    /// The one thing that must not be left behind.
+    ///
+    /// A capture stream outlives the process that started it: replayd keeps the
+    /// session, its descriptors and the menu bar's recording indicator, and
+    /// there is no longer a client anywhere that could ask it to stop. See
+    /// `ScreenCapture.stopSynchronously` for what that costs after a few dozen
+    /// quits. Everything else this app owns is either persisted as it changes
+    /// or dies with the address space.
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { ScreenCapture.shared.stopSynchronously() }
+    }
+
+    /// Ctrl-C is a quit too, as far as ScreenCaptureKit is concerned.
+    ///
+    /// `applicationWillTerminate` covers the menu's Quit and a logout; it does
+    /// not cover `swift run` interrupted from the terminal, which is how this
+    /// app is stopped most often *by a wide margin* during development and
+    /// which leaks a capture session every single time. Both signals have to be
+    /// ignored at the libc level first — the default disposition kills the
+    /// process outright and the dispatch source never gets to run.
+    private func trapExitSignals() {
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                MainActor.assumeIsolated {
+                    ScreenCapture.shared.stopSynchronously()
+                    // Through AppKit rather than exit(), so anything else with a
+                    // termination handler still gets one.
+                    NSApp.terminate(nil)
+                }
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    /// Held, or ARC cancels the sources the moment `trapExitSignals` returns.
+    private var signalSources: [DispatchSourceSignal] = []
 }
 
 // -------------------------------------------------------------- app state --

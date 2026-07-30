@@ -83,6 +83,16 @@ final class ScreenCapture: NSObject {
     private var croppedStream = false
     private var retryTask: Task<Void, Never>?
     private var loggedFailure: String?
+    /// Bumped by every stop and every restart, and checked by `begin` once the
+    /// stream it was starting is actually live.
+    ///
+    /// Starting is asynchronous and takes about 130 ms, which is long enough for
+    /// the widget to be parked, hidden or moved in the middle of it. Installing
+    /// that stream anyway hands `self.stream` to a caller who has already moved
+    /// on and will never ask for it back — and an SCStream nobody stops is not
+    /// merely garbage, it is a capture session replayd keeps alive, holds
+    /// descriptors for, and goes on telling the menu bar about.
+    private var generation = 0
 
     /// How long to wait before trying again after a failed start. Without this
     /// a denied permission turns into a tight retry loop that hammers TCC and
@@ -170,6 +180,7 @@ final class ScreenCapture: NSObject {
     func stop() {
         retryTask?.cancel()
         retryTask = nil
+        generation &+= 1
         desiredDisplayID = nil
         activeDisplayID = nil
         let old = stream
@@ -180,6 +191,51 @@ final class ScreenCapture: NSObject {
         Task { try? await old?.stopCapture() }
     }
 
+    /// Tear the stream down and *wait* for it, because the process is about to
+    /// stop existing.
+    ///
+    /// `stop()` is right everywhere else and useless here: the task it spawns
+    /// never gets a turn once `NSApp.terminate` starts unwinding, so the process
+    /// dies with a live capture session still registered in replayd. Nothing
+    /// reaps it — the client it belonged to is gone, which is precisely why
+    /// nobody can stop it — so replayd health-checks that session every five
+    /// seconds forever, keeps its remote-queue descriptors, and goes on telling
+    /// the menu bar the screen is being recorded by an app that has quit.
+    ///
+    /// Measured after four days of quitting this way: replayd holding 246 pipes
+    /// against a 256-descriptor soft limit, then `FigRemoteQueueSender err=24`
+    /// (EMFILE) on every new stream, `remoteQueue=0x0`, and
+    /// `Cannot Enqueue on an invalid remoteQueue` for every frame after that —
+    /// screen capture silently dead machine-wide, for every app, until replayd
+    /// is restarted. One leaked session per quit is enough to get there.
+    ///
+    /// The wait is bounded because it blocks the main queue and the sample
+    /// handlers run on the main queue: if ScreenCaptureKit wants main to drain
+    /// before it answers, nobody wins. Removing the outputs first makes that
+    /// unlikely, and a two-second stall on quit is worth far less than a wedged
+    /// capture daemon.
+    func stopSynchronously(timeout: TimeInterval = 2) {
+        retryTask?.cancel()
+        retryTask = nil
+        reaimTask?.cancel()
+        reaimTask = nil
+        generation &+= 1
+        desiredDisplayID = nil
+        activeDisplayID = nil
+        isRunning = false
+        texture = nil
+        audioLevel = 0
+        guard let old = stream else { return }
+        stream = nil
+        try? old.removeStreamOutput(self, type: .screen)
+        try? old.removeStreamOutput(self, type: .audio)
+        let done = DispatchSemaphore(value: 0)
+        old.stopCapture { _ in done.signal() }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            Self.log.error("stopCapture did not answer within \(timeout, format: .fixed(precision: 1), privacy: .public)s; exiting anyway")
+        }
+    }
+
     /// Drives the stream toward `desiredDisplayID`. Restarts are async, and the
     /// panel can be dragged onto a third display while one is still starting,
     /// so this re-checks once the in-flight attempt settles instead of dropping
@@ -188,6 +244,8 @@ final class ScreenCapture: NSObject {
         guard !restarting, let want = desiredDisplayID else { return }
         if !force, isRunning, activeDisplayID == want { return }
         restarting = true
+        generation &+= 1
+        let gen = generation
         let old = stream
         stream = nil
         isRunning = false
@@ -195,7 +253,7 @@ final class ScreenCapture: NSObject {
         activeDisplayID = nil
         Task { @MainActor in
             try? await old?.stopCapture()
-            await self.begin(displayID: want)
+            await self.begin(displayID: want, generation: gen)
             self.restarting = false
             if self.isRunning {
                 self.pump()                          // the target may have moved mid-start
@@ -254,7 +312,7 @@ final class ScreenCapture: NSObject {
 
     private func restart() { pump() }
 
-    private func begin(displayID: CGDirectDisplayID) async {
+    private func begin(displayID: CGDirectDisplayID, generation gen: Int) async {
         do {
             // excludingDesktopWindows:false keeps the wallpaper and desktop
             // icons in frame — they are exactly the things worth lensing.
@@ -278,17 +336,19 @@ final class ScreenCapture: NSObject {
                     note(failure: Failure("could not identify the widget's own window; refusing to capture (it would mirror itself)"))
                     return
                 }
-                await begin(displayID: displayID, display: display, ours: retryOurs)
+                await begin(displayID: displayID, display: display, ours: retryOurs,
+                            generation: gen)
                 return
             }
-            await begin(displayID: displayID, display: display, ours: ours)
+            await begin(displayID: displayID, display: display, ours: ours, generation: gen)
         } catch {
             self.isRunning = false
             note(failure: Self.describe(error))
         }
     }
 
-    private func begin(displayID: CGDirectDisplayID, display: SCDisplay, ours: [SCWindow]) async {
+    private func begin(displayID: CGDirectDisplayID, display: SCDisplay, ours: [SCWindow],
+                       generation gen: Int) async {
         do {
             let filter = SCContentFilter(display: display, excludingWindows: ours)
 
@@ -316,6 +376,15 @@ final class ScreenCapture: NSObject {
                                            sampleHandlerQueue: DispatchQueue.main)
             }
             try await stream.startCapture()
+            // Somebody stopped or restarted us while this was starting. Keeping
+            // it would strand a live capture session nothing holds a reference
+            // to; replayd would keep it running until this process died and for
+            // as long after that as replayd itself lives.
+            guard gen == generation else {
+                Self.log.notice("discarding a stream that started after it was superseded")
+                try? await stream.stopCapture()
+                return
+            }
             self.stream = stream
             self.isRunning = true
             self.activeDisplayID = displayID

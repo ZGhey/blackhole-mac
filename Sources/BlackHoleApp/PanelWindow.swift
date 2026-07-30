@@ -123,6 +123,8 @@ final class PanelController {
     func rebuild() {
         positionTimer?.invalidate(); positionTimer = nil
         hitTestTimer?.invalidate(); hitTestTimer = nil
+        // Aimed at the panel that is about to stop existing.
+        occlusionSettle?.invalidate(); occlusionSettle = nil
         for o in observers { NotificationCenter.default.removeObserver(o) }
         observers.removeAll()
         panel?.orderOut(nil)
@@ -322,13 +324,44 @@ final class PanelController {
         observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let p = self.panel else { return }
-                self.occluded = !p.occlusionState.contains(.visible)
-                self.syncRunning(reason: self.occluded ? "occluded" : "visible")
-            }
+            MainActor.assumeIsolated { self?.occlusionChanged() }
         })
     }
+
+    /// Occlusion arrives in pairs, and the pair is not a state the widget was
+    /// ever in.
+    ///
+    /// Measured from the running widget's own log: fourteen times over four days
+    /// SkyLight reported the panel occluded and un-occluded again **one
+    /// millisecond later**, and every one of those pairs tore the capture stream
+    /// down and built a new one — about 150 ms of unlensed widget, and one more
+    /// stream through a ScreenCaptureKit daemon that turns out to leak
+    /// descriptors per stream. Waiting a quarter of a second before believing it
+    /// costs nothing anyone can see: the widget floats above ordinary windows,
+    /// so genuine occlusion means the screen went away, and a screen that went
+    /// away stays away for a great deal longer than that.
+    ///
+    /// Only this reason is debounced. Sleep, lock and hide are all events rather
+    /// than observations, and none of them flickers.
+    private func occlusionChanged() {
+        occlusionSettle?.invalidate()
+        let t = Timer(timeInterval: Self.occlusionSettleDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let p = self.panel else { return }
+                self.occlusionSettle = nil
+                let value = !p.occlusionState.contains(.visible)
+                guard value != self.occluded else { return }
+                self.occluded = value
+                self.syncRunning(reason: value ? "occluded" : "visible")
+            }
+        }
+        // Common mode, or an open menu would hold the settle off indefinitely.
+        RunLoop.main.add(t, forMode: .common)
+        occlusionSettle = t
+    }
+
+    private var occlusionSettle: Timer?
+    private static let occlusionSettleDelay: TimeInterval = 0.25
 
     private static let fade: TimeInterval = 0.25
     /// Longer than the hide fade: hiding is something you asked for a moment
