@@ -39,7 +39,7 @@ struct Uniforms {
     float fallX, fallY, fallSize, fallAlpha;
     float hover, fallTear, feedAngle, feedStrength;
     float feedR, feedG, feedB, plunge;
-    float bgBlur, diskRefresh, pad1, pad2;
+    float bgBlur, diskRefresh, diskThick, pad2;
 };
 
 // The disk's rotation arrives as an already-integrated phase rather than a
@@ -123,6 +123,18 @@ static inline float3 blackbody(float T) {
                          : (t <= 19.0f ? 0.0f
                                        : clamp(0.5432068f * log(t - 10.0f) - 1.1962540f, 0.0f, 1.0f));
     return float3(r, g, b);
+}
+
+// How much gas the disk has at a given radius, as a 0..1 profile: the inner
+// edge softening outward from rin, the plunging region below it, and the outer
+// edge fading out from 0.70 rout. Split out of the crossing because a disk with
+// thickness samples it more than once along the ray — see diskThick.
+static inline float diskBand(float rc, float rin, float rout, float plunge) {
+    if (rc <= 1.02f || rc >= rout) return 0.0f;
+    float inner = rc >= rin
+        ? smoothstep(rin, rin * 1.25f, rc)
+        : plunge * pow(smoothstep(1.02f, rin, rc), 2.5f);
+    return inner * (1.0f - smoothstep(rout * 0.70f, rout, rc));
 }
 
 // sparse procedural starfield indexed by ray direction — because it is
@@ -533,13 +545,48 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
             float tc  = sPrev / (sPrev - s);
             float3 xc = mix(xPrev, x, tc);
             float rc  = length(xc);
+
+            // ---- the disk has a thickness ----
+            // A mathematically thin plane is a razor edge seen edge-on, which is
+            // exactly the view the Interstellar-style presets take. A real disk
+            // is a slab: the ray enters it, travels through gas, and leaves.
+            // Two things follow, and both are what the film's disk looks like.
+            //
+            // `span` is how far along the ray it takes to climb diskThick off
+            // the plane, so xc ± v̂·span are the points where the ray entered and
+            // left the slab. Their in-plane radii straddle rc — by very little
+            // for a ray crossing steeply, by a lot for a grazing one — and
+            // averaging the radial profile over them is what turns the disk's
+            // hard inner and outer edges into soft ones.
+            //
+            // `limb` is the second: a grazing ray travels much further through
+            // the gas than a perpendicular one, so it picks up more light. That
+            // is limb brightening, it is why an edge-on torus is brightest along
+            // its rim, and it is capped because a ray running exactly along the
+            // plane would otherwise integrate to infinity.
+            // Both are capped, and the caps are not cosmetic. Seen edge-on —
+            // which is the view every preset here takes — the ray meets the
+            // plane at a few degrees, so 1/cosn runs to 20 and the chord across
+            // the slab to several r_s. Three taps cannot carry a chord that
+            // long: it comes out as terraced blocks where a neighbouring pixel's
+            // crossing landed a step earlier or later. Bounding the chord is
+            // what keeps the slab a slab instead of a smear, and bounding the
+            // brightening keeps a nearly-tangent ray from integrating to white.
+            float span = 0.0f, limb = 1.0f;
+            if (U.diskThick > 0.001f) {
+                float cosn = max(fabs(dot(n, normalize(v))), 0.02f);
+                span = min(U.diskThick / cosn, 0.45f);
+                limb = min(1.0f / cosn, 2.5f);
+            }
             // Down to just outside the horizon, not just to the ISCO. Inside
             // the innermost stable orbit matter cannot hold a circular orbit
             // and plunges — it is still there and still radiating, thinning as
             // it accelerates inward and reddening as it falls. Stopping the
             // disk dead at DISK_INNER left a hard geometric rim, which was the
-            // one obviously drawn edge left in the picture.
-            if (rc > 1.02f && rc < rout) {
+            // one obviously drawn edge left in the picture. The window is
+            // widened by `span` because a slab reaches that much further along
+            // the ray than the plane it is centred on.
+            if (rc > 1.02f - span && rc < rout + span) {
                 // The photon ring is not a separate object — it is the stack of
                 // higher-order images, made by rays that wound around the
                 // photon sphere before escaping. Every extra crossing is one
@@ -554,10 +601,25 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                 // Outside the ISCO the inner edge softens as before; inside
                 // it, emission falls off steeply toward the horizon rather than
                 // stopping.
-                float inner = rc >= rin
-                    ? smoothstep(rin, rin * 1.25f, rc)
-                    : U.plunge * pow(smoothstep(1.02f, rin, rc), 2.5f);
-                float band = inner * (1.0f - smoothstep(rout * 0.70f, rout, rc));
+                //
+                // With a thickness, the profile is the ray's own average across
+                // the slab rather than its value at the midplane: the entry and
+                // exit points sit at ±diskThick off the plane, which puts their
+                // in-plane radii at sqrt(|x|² − diskThick²). Weights are a
+                // Gaussian column, exp(-(z/h)²), normalized — 0.216 / 0.568 /
+                // 0.216 — so a vertical ray is unchanged and a grazing one has
+                // its edges smeared over however much disk it actually crossed.
+                float band = diskBand(rc, rin, rout, U.plunge);
+                if (span > 0.0f) {
+                    float3 vn = normalize(v);
+                    float h2t = U.diskThick * U.diskThick;
+                    float3 xa = xc - vn * span, xb = xc + vn * span;
+                    float ra = sqrt(max(dot(xa, xa) - h2t, 0.0f));
+                    float rb = sqrt(max(dot(xb, xb) - h2t, 0.0f));
+                    band = 0.568f * band
+                         + 0.216f * diskBand(ra, rin, rout, U.plunge)
+                         + 0.216f * diskBand(rb, rin, rout, U.plunge);
+                }
 
                 // disk-plane polar coords for the streak texture
                 float phi   = atan2(dot(xc, e2), xc.x);
@@ -673,7 +735,12 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
                 cbb = mix(cbb, float3(U.feedR, U.feedG, U.feedB), clamp(feed * 0.45f, 0.0f, 1.0f));
                 float boost = pow(gg, U.diskBeam);                 // relativistic beaming
 
-                float density = band * streaks * (1.0f + spot);
+                // limb is 1 for a thin disk, and up to 3.5 for a ray that slid
+                // along the slab — more gas crossed, so more light picked up and
+                // more of what is behind hidden. Both halves matter: it is what
+                // gives a thick disk its bright edge-on rim, and what makes it
+                // read as something with a body rather than a painted line.
+                float density = band * streaks * (1.0f + spot) * limb;
                 emitc += trans * cbb * (U.diskGain * gainBoost * (1.0f + 2.4f * feed)
                                         * ring * 2.2f * density * tprof * tprof * boost);
                 trans *= 1.0f - clamp(U.diskOpacity * density, 0.0f, 1.0f);
@@ -765,9 +832,12 @@ fragment SceneOut blackholeFragment(VSOut in [[stage_in]],
 // downsample, separable blur, composite — run by Renderer between the scene and
 // the drawable.
 
+// Mirrors `BloomChain.Uniforms` in Renderer.swift. Not covered by the contract
+// check — that one guards the tracer's struct — so these two are held together
+// by hand: all-float, same order, eight of them.
 struct BloomUniforms {
     float threshold, strength, texelX, texelY;
-    float dirX, dirY, pad0, pad1;
+    float dirX, dirY, stretch, glare;
 };
 
 /// Isolate what is bright enough to spill, at quarter resolution — the blur
@@ -795,16 +865,23 @@ fragment float4 bloomBright(VSOut in [[stage_in]],
 
 /// One axis of a separable Gaussian. Two passes, nine taps each, which is
 /// cheaper and wider than any single-pass kernel of the same quality.
+///
+/// `stretch` widens the tap spacing, which is the whole of the anamorphic
+/// glare: the same kernel run horizontally at several times the spread draws
+/// bright light out into a streak instead of a disc. Run twice with different
+/// spreads, because nine taps over that reach on their own would ghost — two
+/// Gaussians convolved are one wider, smoother Gaussian.
 fragment float4 bloomBlur(VSOut in [[stage_in]],
                           constant BloomUniforms &B [[buffer(0)]],
                           texture2d<float> src [[texture(0)]],
                           sampler smp [[sampler(0)]]) {
     float2 uv = in.pos.xy * float2(B.texelX, B.texelY);
     float2 step = float2(B.dirX, B.dirY) * float2(B.texelX, B.texelY);
+    float spread = B.stretch > 0.0f ? B.stretch : 1.0f;
     const float w[5] = { 0.2270270f, 0.1945946f, 0.1216216f, 0.0540541f, 0.0162162f };
     float3 c = src.sample(smp, uv).rgb * w[0];
     for (int i = 1; i < 5; i++) {
-        float2 o = step * float(i) * 1.6f;
+        float2 o = step * float(i) * 1.6f * spread;
         c += src.sample(smp, uv + o).rgb * w[i];
         c += src.sample(smp, uv - o).rgb * w[i];
     }
@@ -818,10 +895,27 @@ fragment float4 bloomComposite(VSOut in [[stage_in]],
                                constant BloomUniforms &B [[buffer(0)]],
                                texture2d<float> scene [[texture(0)]],
                                texture2d<float> bloom [[texture(1)]],
+                               texture2d<float> streak [[texture(2)]],
                                sampler smp [[sampler(0)]]) {
     float2 uv = in.pos.xy * float2(B.texelX, B.texelY);
     float4 s = scene.sample(smp, uv);
-    float3 g = bloom.sample(smp, uv).rgb * B.strength;
+    // The glow and the streak are the same light through two different
+    // apertures, so they sum before anything else happens to them. `glare` is 0
+    // for a round bloom, and the streak texture is then whatever was cheapest to
+    // bind — it is multiplied away.
+    float3 g = bloom.sample(smp, uv).rgb * B.strength
+             + streak.sample(smp, uv).rgb * B.glare;
+    // The widget is round and the window is not, and the tracer's own taper
+    // cannot help here: these passes *spread* light, so an anamorphic streak
+    // hundreds of pixels wide carries emission straight out past the silhouette
+    // to the window's edge, where the rectangle cuts it off. That reads as a
+    // luminous bar with square ends — the widget stops being a disc. Every pass
+    // that moves light sideways has to be re-tapered by the same silhouette the
+    // tracer used. Aspect comes back out of the texel size: texelY/texelX is
+    // (1/height)/(1/width).
+    float aspect = B.texelY / max(B.texelX, 1e-9f);
+    float rNorm = length((uv - 0.5f) * float2(aspect, 1.0f)) / PANEL_FADE_MAX;
+    g *= 1.0f - smoothstep(PANEL_FADE_START, 1.0f, rNorm);
     float ga = clamp(max(g.r, max(g.g, g.b)), 0.0f, 1.0f);
     float a = clamp(s.a + ga * (1.0f - s.a), 0.0f, 1.0f);
     // Screen, not add. Adding drives whichever channel is already highest to 1

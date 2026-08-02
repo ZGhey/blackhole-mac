@@ -166,6 +166,7 @@ public enum FrameUniforms {
 
         u.bgBlur      = v("BG_BLUR")
         u.diskRefresh = v("DISK_REFRESH")
+        u.diskThick   = v("DISK_THICK")
 
         return u
     }

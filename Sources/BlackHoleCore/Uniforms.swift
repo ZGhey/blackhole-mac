@@ -125,7 +125,12 @@ public struct Uniforms {
     /// accumulate before it is replaced by a fresh copy. Without a bound the
     /// pattern winds itself below the pixel grid and the disk goes to noise.
     public internal(set) var diskRefresh: Float = 26
-    public internal(set) var pad1: Float = 0
+    /// Vertical half-thickness of the disk, in Schwarzschild radii. 0 is the
+    /// mathematically thin plane the tracer started with — a razor edge seen
+    /// edge-on. Above 0 the crossing is integrated across a slab instead, which
+    /// softens the disk's radial edges and brightens grazing lines of sight the
+    /// way a real optically-thick torus does.
+    public internal(set) var diskThick: Float = 0
     public internal(set) var pad2: Float = 0
 
     /// Only `FrameUniforms.make` has anything to say about the contents.

@@ -293,7 +293,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         bloom.run(in: buffer, finalPass: pass, blur: wantsBloom,
-                  threshold: Float(params["BLOOM_THRESHOLD"]), strength: strength)
+                  threshold: Float(params["BLOOM_THRESHOLD"]), strength: strength,
+                  glare: Float(params["GLARE"]))
 
         buffer.present(drawable)
         buffer.commit()
@@ -305,6 +306,9 @@ final class Renderer: NSObject, MTKViewDelegate {
 /// Kept apart from the tracer because it is ordinary screen-space work — no
 /// geodesics, no physics, just the observation that bright things spill.
 final class BloomChain {
+    /// Mirrors `BloomUniforms` in BlackHole.metal — all-float, same order. The
+    /// contract check guards the tracer's struct, not this one, so these two are
+    /// kept in step by hand.
     struct Uniforms {
         var threshold: Float = 0
         var strength: Float = 0
@@ -312,8 +316,11 @@ final class BloomChain {
         var texelY: Float = 0
         var dirX: Float = 0
         var dirY: Float = 0
-        var pad0: Float = 0
-        var pad1: Float = 0
+        /// Tap spacing multiplier for the blur — 1 (or 0, read as 1) is the
+        /// round bloom, larger draws the glare out sideways.
+        var stretch: Float = 0
+        /// How much of the anamorphic streak reaches the composite.
+        var glare: Float = 0
     }
 
     private let device: MTLDevice
@@ -326,6 +333,10 @@ final class BloomChain {
     private var emission: MTLTexture?
     private var ping: MTLTexture?
     private var pong: MTLTexture?
+    /// Where the anamorphic streak lands. It cannot share ping/pong: the round
+    /// bloom has to survive in ping while the streak is being drawn out of it,
+    /// and both are read by the same composite.
+    private var streak: MTLTexture?
     private var size = (w: 0, h: 0)
 
     /// Half-float: the blur sums many taps, and 8-bit banding shows badly in a
@@ -379,8 +390,9 @@ final class BloomChain {
         guard let s = make(width, height),
               let e = make(width, height),
               let a = make(width / 4, height / 4),
-              let b = make(width / 4, height / 4) else { return false }
-        scene = s; emission = e; ping = a; pong = b
+              let b = make(width / 4, height / 4),
+              let c = make(width / 4, height / 4) else { return false }
+        scene = s; emission = e; ping = a; pong = b; streak = c
         size = (width, height)
         return true
     }
@@ -398,8 +410,8 @@ final class BloomChain {
     }
 
     func run(in buffer: MTLCommandBuffer, finalPass: MTLRenderPassDescriptor,
-             blur: Bool, threshold: Float, strength: Float) {
-        guard let scene, let emission, let ping, let pong else { return }
+             blur: Bool, threshold: Float, strength: Float, glare: Float = 0) {
+        guard let scene, let emission, let ping, let pong, let streak else { return }
 
         func pass(_ target: MTLTexture?, _ descriptor: MTLRenderPassDescriptor?,
                   _ state: MTLRenderPipelineState, _ textures: [MTLTexture],
@@ -429,6 +441,10 @@ final class BloomChain {
 
         var u = Uniforms(threshold: threshold, strength: strength,
                          texelX: small.x, texelY: small.y)
+        // The streak has its own bright pass but shares the chain's targets and
+        // its composite, so it rides on the round bloom being on at all: with
+        // BLOOM at 0 nothing here runs.
+        let wantsGlare = blur && glare > 0.001
         if blur {
             // Emission only. Handing this the composed scene is what made a
             // pale wallpaper glow.
@@ -437,10 +453,46 @@ final class BloomChain {
             pass(pong, nil, blurState, [ping], u)
             u.dirX = 0; u.dirY = 1
             pass(ping, nil, blurState, [pong], u)
+
+            if wantsGlare {
+                // Its own bright pass, at a lower threshold than the round
+                // bloom's. They are not the same phenomenon: the round glow is
+                // the very brightest highlights scattering locally, which is
+                // why its threshold has to sit *above* the disk's own body or
+                // the disk blooms onto itself. A lens's anamorphic flare comes
+                // off the whole bright field, and keyed to the same threshold it
+                // catches only the photon ring and is invisible.
+                var g = u
+                g.threshold = threshold * 0.75
+                pass(pong, nil, bright, [emission], g)
+                // Three horizontal passes, each twice as wide as the last,
+                // rather than one very wide one. Nine taps stretched across a
+                // couple of hundred pixels do not blur — they ghost, and the
+                // ghosts read as a grid of faint copies of the disk laid over
+                // the shadow. Doubling per pass keeps every tap inside a few
+                // texels of its neighbour, and convolving the three gives one
+                // smooth streak about a third of the widget long either side.
+                g.dirX = 1; g.dirY = 0
+                g.stretch = 2; pass(streak, nil, blurState, [pong], g)
+                g.stretch = 4; pass(pong, nil, blurState, [streak], g)
+                g.stretch = 8; pass(streak, nil, blurState, [pong], g)
+                // One narrow vertical pass to finish. Blurring in x alone
+                // leaves every bit of y detail the emission had — the ring's
+                // own thickness variation — perfectly sharp, and smeared
+                // sideways across the shadow that reads as a cross-hatch rather
+                // than as glare. A real flare has a soft edge in both axes.
+                g.dirX = 0; g.dirY = 1; g.stretch = 1
+                pass(pong, nil, blurState, [streak], g)
+                // ...which leaves it in pong, because ping is still holding the
+                // round bloom that the composite also needs.
+            }
         }
 
         u = Uniforms(threshold: threshold, strength: blur ? strength : 0,
-                     texelX: full.x, texelY: full.y)
-        pass(nil, finalPass, composite, [scene, ping], u)
+                     texelX: full.x, texelY: full.y,
+                     glare: wantsGlare ? glare : 0)
+        // ping stands in for the streak when there is none — its contribution is
+        // multiplied by a zero glare, and binding nothing is not an option.
+        pass(nil, finalPass, composite, [scene, ping, wantsGlare ? pong : ping], u)
     }
 }

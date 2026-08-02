@@ -58,8 +58,11 @@ to tell you, which goes away once it doesn't:
   click-through, so the widget can sit over a window without swallowing clicks
   meant for it.
 - **Style** — Inferno, Gargantua, M87\* donut, Face-on ember, Quasar, Blazar,
-  Pure lens, Zen. These disagree wildly about how wide the accretion disk is
-  (7 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
+  Pure lens, Zen. **Gargantua** is the one from *Interstellar*, down to the
+  three departures from physics the film made on purpose: no Doppler
+  asymmetry, a disk with a soft-edged body rather than a razor plane, and an
+  anamorphic glare. These disagree wildly about how wide the accretion disk is
+  (9 r_s for Gargantua, 16 for Blazar), so the hole is scaled down automatically
   until the bright part fits the frame. Every style fills the same widget
   without being clipped.
 - **Cycle** moves it on to the next style every **5 minutes**, **30 minutes**,
